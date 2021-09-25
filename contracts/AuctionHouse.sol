@@ -32,9 +32,6 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
     // The minimum percentage difference between the last bid amount and the current bid.
     uint8 public minBidIncrementPercentage;
 
-    // The address of the zora protocol to use via this contract
-    address public zora;
-
     // / The address of the WETH contract, so that any ETH transferred can be handled as an ERC-20
     address public wethAddress;
 
@@ -56,12 +53,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
     /*
      * Constructor
      */
-    constructor(address _zora, address _weth) public {
-        require(
-            IERC165(_zora).supportsInterface(interfaceId),
-            "Doesn't support NFT interface"
-        );
-        zora = _zora;
+    constructor(address _weth) public {
         wethAddress = _weth;
         timeBuffer = 15 * 60; // extend 15 minutes after every bid made in last 15 minutes
         minBidIncrementPercentage = 5; // 5%
