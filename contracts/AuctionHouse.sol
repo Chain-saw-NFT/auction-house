@@ -325,7 +325,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
         }
     }
 
-    function _generateRoyaltyAmount(uint256 auctionId, address tokenContract) internal returns (uint256) {
+    function _generateRoyaltyAmount(uint256 auctionId, address tokenContract) internal view returns (uint256) {
         return auctions[auctionId].amount.div(100).mul(royaltyRegistry[tokenContract].royaltyPercentage);
     }
 
