@@ -97,7 +97,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
 
         _auctionIdTracker.increment();
 
-        emit AuctionCreated(auctionId, tokenId, tokenContract, duration, reservePrice, tokenOwner, auctionCurrency, commissionAddress, commissionPercentage);
+        emit AuctionCreated(auctionId, tokenId, tokenContract, duration, reservePrice, tokenOwner, auctionCurrency);
  
         return auctionId;
     }
@@ -237,11 +237,12 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
             return;
         }
 
-        if (royaltyRegistry[auctions[auctionId].tokenContract].benficiary != address(0) && royaltyRegistry[auctions[auctionId].tokenContract].royaltyPercentage > 0){
-            uint256 royaltyAmount = _generateRoyaltyAmount(tokenContract);
+        if (royaltyRegistry[auctions[auctionId].tokenContract].beneficiary != address(0) && royaltyRegistry[auctions[auctionId].tokenContract].royaltyPercentage > 0){
+            uint256 royaltyAmount = _generateRoyaltyAmount(auctionId, auctions[auctionId].tokenContract);
             uint256 amountRemaining = tokenOwnerProfit.sub(royaltyAmount);
+            address tokenContract = auctions[auctionId].tokenContract;
 
-            _handleOutgoingBid(auctions[auctionId].commissionAddress, commissionAmount, auctions[auctionId].auctionCurrency);
+            _handleOutgoingBid(royaltyRegistry[tokenContract].beneficiary, royaltyAmount, auctions[auctionId].auctionCurrency);
             _handleOutgoingBid(auctions[auctionId].tokenOwner, amountRemaining, auctions[auctionId].auctionCurrency);
 
 
@@ -252,7 +253,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
                 auctions[auctionId].tokenOwner,            
                 auctions[auctionId].bidder,
                 amountRemaining,
-                royaltyRegistry[auctions[auctionId].tokenContract].benficiary,
+                royaltyRegistry[tokenContract].beneficiary,
                 royaltyAmount,            
                 currency
             );
@@ -324,7 +325,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
         }
     }
 
-    function _generateRoyaltyAmount(address tokenContract) internal returns (uint256) {
+    function _generateRoyaltyAmount(uint256 auctionId, address tokenContract) internal returns (uint256) {
         return auctions[auctionId].amount.div(100).mul(royaltyRegistry[tokenContract].royaltyPercentage);
     }
 

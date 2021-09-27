@@ -46,9 +46,7 @@ interface IAuctionHouse {
         uint256 duration,
         uint256 reservePrice,
         address tokenOwner,        
-        address auctionCurrency,
-        address commissionAddress,
-        uint8 commissionPercentage
+        address auctionCurrency
     );
 
     event AuctionApprovalUpdated(
