@@ -111,19 +111,19 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
         emit AuctionReservePriceUpdated(auctionId, auctions[auctionId].tokenId, auctions[auctionId].tokenContract, reservePrice);
     }
 
-    function setBeneficiaryAddress(address tokenContract, address payable newBeneficiary) external override {
+    /**
+     * @notice Set royalty information for a given token contract.
+     * @dev Store the royal details in the royaltyRegistry mapping and emit an royaltySet event.     
+     */
+    function setRoyalty(address tokenContract, address payable beneficiary, uint royaltyPercentage) external override {
         // TODO - access controls
-        royaltyRegistry[tokenContract].beneficiary = newBeneficiary;
-        emit BeneficiaryAddressUpdated(tokenContract, commissionAddress);
+        royaltyRegistry[tokenContract] = Royalty({
+            beneficiary: beneficiary,
+            royaltyPercentage: royaltyPercentage
+        });
+        emit RoyaltySet(tokenContract, beneficiary, royaltyPercentage);
     }
 
-    function setRoyaltyPercentage(address tokenContract, uint256 newRoyaltyPercentage) external override {
-        // TODO - access controls
-
-        royaltyRegistry[tokenContract].royaltyPercentage = newRoyaltyPercentage;
-
-        emit RoyaltyPercentageUpdated(tokenContract, newRoyaltyPercentage);
-    }
 
     /**
      * @notice Create a bid on a token, with a given amount.
