@@ -28,12 +28,15 @@ interface IAuctionHouse {
         // If set to 0x0, the auction will be run in ETH
         address auctionCurrency;
         // The address of recipient of the sale commission
-        address commissionAddress;
-        //The address of the recipient of the sale commission
-        //If set to 0x0, no commission will generated
-        uint256 commissionPercentage;
-        // The percentage of the sale the commission address receives
-        //If percentage is set to 0, no commission will be generated
+    }
+
+    struct Royalty {
+        //The address of the beneficiary who will be receiving royalties for each sale
+        address payable beneficiaryAddress;
+        //The percentage of the sale the commission address receives
+        //If percentage is set to 0, the full amount will be sent
+        uint256 royaltyPercentage;
+
     }
 
     event AuctionCreated(
@@ -61,14 +64,14 @@ interface IAuctionHouse {
         uint256 reservePrice
     );
 
-    event AuctionCommissionAddressUpdated(
-        uint256 indexed auctionId,
-        address indexed newCommissionAddress
+    event AuctionBeneficiaryAddressUpdated(
+        address indexed tokenContract,
+        address indexed newBeneficiaryAddress
     );
 
-    event AuctionCommissionPercentageUpdated(
-        uint256 indexed auctionId,
-        uint256 indexed newCommissionPercentage
+    event AuctionRoyaltyPercentageUpdated(
+        address indexed tokenContract,
+        uint256 indexed newRoyaltyPercentage
     );
 
     event AuctionBid(
@@ -98,15 +101,15 @@ interface IAuctionHouse {
         address auctionCurrency
     );
 
-    event AuctionWithCommissionEnded(
+    event AuctionWithEnded(
         uint256 indexed auctionId,
         uint256 indexed tokenId,
         address indexed tokenContract,
         address tokenOwner,        
         address winner,
         uint256 amount,
-        address commissionAddress,
-        uint256 commissionAmount,        
+        address beneficiaryAddress,
+        uint256 royaltyAmount,        
         address auctionCurrency
     );
 
@@ -130,9 +133,9 @@ interface IAuctionHouse {
 
     function setAuctionReservePrice(uint256 auctionId, uint256 reservePrice) external;
 
-    function updateCommissionAddress(uint256 auctionId, address commissionAddress) external;
+    function updateBeneficiaryAddress(address tokenContract, address beneficiaryAddress) external;
 
-    function updateCommissionPercentage(uint256 auctionId, uint256 commissionPercentage) external;
+    function updateRoyaltyPercentage(address tokenContract, uint256 royaltyPercentage) external;
 
     function createBid(uint256 auctionId, uint256 amount) external payable;
 
