@@ -131,9 +131,9 @@ interface IAuctionHouse {
 
     function setAuctionReservePrice(uint256 auctionId, uint256 reservePrice) external;
 
-    function updateBeneficiaryAddress(address tokenContract, address beneficiaryAddress) external;
+    function setBeneficiaryAddress(address tokenContract, address beneficiaryAddress) external;
 
-    function updateRoyaltyPercentage(address tokenContract, uint256 royaltyPercentage) external;
+    function setRoyaltyPercentage(address tokenContract, uint256 royaltyPercentage) external;
 
     function createBid(uint256 auctionId, uint256 amount) external payable;
 
