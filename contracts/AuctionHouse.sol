@@ -229,6 +229,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
         address currency = auctions[auctionId].auctionCurrency == address(0) ? wethAddress : auctions[auctionId].auctionCurrency;
 
         uint256 tokenOwnerProfit = auctions[auctionId].amount;
+        address tokenContract = auctions[auctionId].tokenContract;
  
         // Otherwise, transfer the token to the winner and pay out the participants below
         try IERC721(auctions[auctionId].tokenContract).safeTransferFrom(address(this), auctions[auctionId].bidder, auctions[auctionId].tokenId) {} catch {
@@ -237,10 +238,10 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
             return;
         }
 
-        if (royaltyRegistry[auctions[auctionId].tokenContract].beneficiary != address(0) && royaltyRegistry[auctions[auctionId].tokenContract].royaltyPercentage > 0){
+        if (royaltyRegistry[tokenContract].beneficiary != address(0) && royaltyRegistry[tokenContract].royaltyPercentage > 0){
             uint256 royaltyAmount = _generateRoyaltyAmount(auctionId, auctions[auctionId].tokenContract);
             uint256 amountRemaining = tokenOwnerProfit.sub(royaltyAmount);
-            address tokenContract = auctions[auctionId].tokenContract;
+            
 
             _handleOutgoingBid(royaltyRegistry[tokenContract].beneficiary, royaltyAmount, auctions[auctionId].auctionCurrency);
             _handleOutgoingBid(auctions[auctionId].tokenOwner, amountRemaining, auctions[auctionId].auctionCurrency);
