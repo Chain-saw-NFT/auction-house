@@ -39,7 +39,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
     mapping(uint256 => IAuctionHouse.Auction) public auctions;
 
     //A mapping of token contracts to royalty objects
-    mapping(address => IAuctionHouse.Royalty) public royaltyRegistry
+    mapping(address => IAuctionHouse.Royalty) public royaltyRegistry;
 
     bytes4 constant interfaceId = 0x80ac58cd; // 721 interface id
 
