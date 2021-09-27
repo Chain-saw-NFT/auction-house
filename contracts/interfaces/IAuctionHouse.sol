@@ -125,9 +125,7 @@ interface IAuctionHouse {
         address tokenContract,
         uint256 duration,
         uint256 reservePrice,        
-        address auctionCurrency,
-        address commissionAddress,
-        uint8 comissionPercentage
+        address auctionCurrency
     ) external returns (uint256);
 
 
