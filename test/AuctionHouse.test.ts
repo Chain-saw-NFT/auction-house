@@ -2,52 +2,45 @@ import chai, { expect } from "chai";
 import asPromised from "chai-as-promised";
 // @ts-ignore
 import { ethers } from "hardhat";
-import { Market, Media } from "@zoralabs/core/dist/typechain";
 import { AuctionHouse, BadBidder, TestERC721, BadERC721 } from "../typechain";
 import { formatUnits } from "ethers/lib/utils";
 import { BigNumber, Contract, Signer } from "ethers";
 import {
-  approveAuction,
   deployBidder,
   deployOtherNFTs,
-  deployWETH,
-  deployZoraProtocol,
-  mint,
+  deployWETH,  
   ONE_ETH,
   revert,
   TWO_ETH,
 } from "./utils";
+import { test } from "mocha";
 
 chai.use(asPromised);
 
-describe("AuctionHouse", () => {
-  let market: Market;
-  let media: Media;
+describe("AuctionHouse", () => {  
   let weth: Contract;
   let badERC721: BadERC721;
-  let testERC721: TestERC721;
+  let testERC721: TestERC721;  
 
   beforeEach(async () => {
-    await ethers.provider.send("hardhat_reset", []);
-    const contracts = await deployZoraProtocol();
-    const nfts = await deployOtherNFTs();
-    market = contracts.market;
-    media = contracts.media;
+    await ethers.provider.send("hardhat_reset", []);    
+    const nfts = await deployOtherNFTs();    
     weth = await deployWETH();
     badERC721 = nfts.bad;
     testERC721 = nfts.test;
   });
 
+  ////////////////////////////////////////
+
   async function deploy(): Promise<AuctionHouse> {
     const AuctionHouse = await ethers.getContractFactory("AuctionHouse");
-    const auctionHouse = await AuctionHouse.deploy(media.address, weth.address);
+    const auctionHouse = await AuctionHouse.deploy(weth.address);
 
     return auctionHouse as AuctionHouse;
   }
 
   async function createAuction(
-    auctionHouse: AuctionHouse,
-    curator: string,
+    auctionHouse: AuctionHouse,    
     currency = "0x0000000000000000000000000000000000000000"
   ) {
     const tokenId = 0;
@@ -56,27 +49,19 @@ describe("AuctionHouse", () => {
 
     await auctionHouse.createAuction(
       tokenId,
-      media.address,
+      testERC721.address,
       duration,
       reservePrice,
-      curator,
-      5,
       currency
     );
   }
 
+  //////////////////////////////////////////////////
   describe("#constructor", () => {
     it("should be able to deploy", async () => {
       const AuctionHouse = await ethers.getContractFactory("AuctionHouse");
-      const auctionHouse = await AuctionHouse.deploy(
-        media.address,
-        weth.address
-      );
+      const auctionHouse = await AuctionHouse.deploy(weth.address);
 
-      expect(await auctionHouse.zora()).to.eq(
-        media.address,
-        "incorrect zora address"
-      );
       expect(formatUnits(await auctionHouse.timeBuffer(), 0)).to.eq(
         "900.0",
         "time buffer should equal 900"
@@ -85,82 +70,67 @@ describe("AuctionHouse", () => {
         5,
         "minBidIncrementPercentage should equal 5%"
       );
-    });
-
-    it("should not allow a configuration address that is not the Zora Media Protocol", async () => {
-      const AuctionHouse = await ethers.getContractFactory("AuctionHouse");
-      await expect(
-        AuctionHouse.deploy(market.address, weth.address)
-      ).eventually.rejectedWith("Transaction reverted without a reason");
-    });
+    });    
   });
 
   describe("#createAuction", () => {
     let auctionHouse: AuctionHouse;
-    beforeEach(async () => {
-      auctionHouse = await deploy();
-      await mint(media);
-      await approveAuction(media, auctionHouse);
+    beforeEach(async () => {      
+      auctionHouse = await deploy();      
     });
 
-    it("should revert if the token contract does not support the ERC721 interface", async () => {
+    it("should revert if the caller is not approved", async () => {      
       const duration = 60 * 60 * 24;
       const reservePrice = BigNumber.from(10).pow(18).div(2);
-      const [_, curator] = await ethers.getSigners();
+      const [_, __, ___, ____, unapproved] = await ethers.getSigners();            
 
-      await expect(
-        auctionHouse.createAuction(
-          0,
-          badERC721.address,
-          duration,
-          reservePrice,
-          curator.address,
-          5,
-          "0x0000000000000000000000000000000000000000"
-        )
-      ).eventually.rejectedWith(
-        revert`tokenContract does not support ERC721 interface`
-      );
-    });
-
-    it("should revert if the caller is not approved", async () => {
-      const duration = 60 * 60 * 24;
-      const reservePrice = BigNumber.from(10).pow(18).div(2);
-      const [_, curator, __, ___, unapproved] = await ethers.getSigners();
       await expect(
         auctionHouse
           .connect(unapproved)
           .createAuction(
             0,
-            media.address,
+            testERC721.address,
             duration,
-            reservePrice,
-            curator.address,
-            5,
+            reservePrice,                        
             "0x0000000000000000000000000000000000000000"
           )
       ).eventually.rejectedWith(
-        revert`Caller must be approved or owner for token id`
+        revert`Caller must be designated auctioneer`
       );
     });
+
+    it("should revert if the token contract does not support the ERC721 interface", async () => {
+      const duration = 60 * 60 * 24;
+      const reservePrice = BigNumber.from(10).pow(18).div(2);                
+      
+      await expect(
+        auctionHouse          
+          .createAuction(
+            0,
+            badERC721.address,
+            duration,
+            reservePrice,          
+            "0x0000000000000000000000000000000000000000"
+          )
+        ).eventually.rejectedWith(
+          revert`tokenContract does not support ERC721 interface`
+        );
+      });
 
     it("should revert if the token ID does not exist", async () => {
       const tokenId = 999;
       const duration = 60 * 60 * 24;
-      const reservePrice = BigNumber.from(10).pow(18).div(2);
-      const owner = await media.ownerOf(0);
-      const [admin, curator] = await ethers.getSigners();
+      const reservePrice = BigNumber.from(10).pow(18).div(2);      
+      const [admin] = await ethers.getSigners();
 
       await expect(
         auctionHouse
           .connect(admin)
           .createAuction(
             tokenId,
-            media.address,
+            testERC721.address,
             duration,
-            reservePrice,
-            curator.address,
-            5,
+            reservePrice,            
             "0x0000000000000000000000000000000000000000"
           )
       ).eventually.rejectedWith(
@@ -168,67 +138,54 @@ describe("AuctionHouse", () => {
       );
     });
 
-    it("should revert if the curator fee percentage is >= 100", async () => {
-      const duration = 60 * 60 * 24;
-      const reservePrice = BigNumber.from(10).pow(18).div(2);
-      const owner = await media.ownerOf(0);
-      const [_, curator] = await ethers.getSigners();
+    it("should allow admin to create auction", async () => {
+      const [admin] = await ethers.getSigners();
+      await testERC721.mint(await admin.getAddress(), 0);
+      await testERC721.setApprovalForAll(auctionHouse.address, true);
+      const owner = await testERC721.ownerOf(0);
 
-      await expect(
-        auctionHouse.createAuction(
-          0,
-          media.address,
-          duration,
-          reservePrice,
-          curator.address,
-          100,
-          "0x0000000000000000000000000000000000000000"
-        )
-      ).eventually.rejectedWith(
-        revert`curatorFeePercentage must be less than 100`
-      );
-    });
-
-    it("should create an auction", async () => {
-      const owner = await media.ownerOf(0);
-      const [_, expectedCurator] = await ethers.getSigners();
-      await createAuction(auctionHouse, await expectedCurator.getAddress());
-
+      await createAuction(auctionHouse.connect(admin));
+    
       const createdAuction = await auctionHouse.auctions(0);
 
       expect(createdAuction.duration).to.eq(24 * 60 * 60);
       expect(createdAuction.reservePrice).to.eq(
         BigNumber.from(10).pow(18).div(2)
+      );      
+      expect(createdAuction.tokenOwner).to.eq(owner);            
+    });
+
+    it("should allow auctioneer to create auction", async () => {
+      const [admin, auctioneer] = await ethers.getSigners();
+      await testERC721.mint(await admin.getAddress(), 0);
+      await testERC721.setApprovalForAll(auctionHouse.address, true);
+      const owner = await testERC721.ownerOf(0);
+
+      await auctionHouse.grantRole(
+        await auctionHouse.AUCTIONEER(), 
+        await auctioneer.getAddress()
       );
-      expect(createdAuction.curatorFeePercentage).to.eq(5);
-      expect(createdAuction.tokenOwner).to.eq(owner);
-      expect(createdAuction.curator).to.eq(expectedCurator.address);
-      expect(createdAuction.approved).to.eq(false);
-    });
 
-    it("should be automatically approved if the creator is the curator", async () => {
-      const owner = await media.ownerOf(0);
-      await createAuction(auctionHouse, owner);
-
+      await createAuction(auctionHouse.connect(auctioneer));
+    
       const createdAuction = await auctionHouse.auctions(0);
 
-      expect(createdAuction.approved).to.eq(true);
-    });
-
-    it("should be automatically approved if the creator is the Zero Address", async () => {
-      await createAuction(auctionHouse, ethers.constants.AddressZero);
-
-      const createdAuction = await auctionHouse.auctions(0);
-
-      expect(createdAuction.approved).to.eq(true);
+      expect(createdAuction.duration).to.eq(24 * 60 * 60);
+      expect(createdAuction.reservePrice).to.eq(
+        BigNumber.from(10).pow(18).div(2)
+      );      
+      expect(createdAuction.tokenOwner).to.eq(owner);            
     });
 
     it("should emit an AuctionCreated event", async () => {
-      const owner = await media.ownerOf(0);
-      const [_, expectedCurator] = await ethers.getSigners();
+      const [admin] = await ethers.getSigners();
+
+      await testERC721.mint(await admin.getAddress(), 0);
+      await testERC721.setApprovalForAll(auctionHouse.address, true);
+      const owner = await testERC721.ownerOf(0);
 
       const block = await ethers.provider.getBlockNumber();
-      await createAuction(auctionHouse, await expectedCurator.getAddress());
+      await createAuction(auctionHouse.connect(admin));
       const currAuction = await auctionHouse.auctions(0);
       const events = await auctionHouse.queryFilter(
         auctionHouse.filters.AuctionCreated(
@@ -238,9 +195,7 @@ describe("AuctionHouse", () => {
           null,
           null,
           null,
-          null,
-          null,
-          null
+          null,          
         ),
         block
       );
@@ -249,94 +204,29 @@ describe("AuctionHouse", () => {
       expect(logDescription.name).to.eq("AuctionCreated");
       expect(logDescription.args.duration).to.eq(currAuction.duration);
       expect(logDescription.args.reservePrice).to.eq(currAuction.reservePrice);
-      expect(logDescription.args.tokenOwner).to.eq(currAuction.tokenOwner);
-      expect(logDescription.args.curator).to.eq(currAuction.curator);
-      expect(logDescription.args.curatorFeePercentage).to.eq(
-        currAuction.curatorFeePercentage
-      );
+      expect(logDescription.args.tokenOwner).to.eq(currAuction.tokenOwner);      
       expect(logDescription.args.auctionCurrency).to.eq(
         ethers.constants.AddressZero
       );
     });
   });
 
-  describe("#setAuctionApproval", () => {
-    let auctionHouse: AuctionHouse;
-    let admin: Signer;
-    let curator: Signer;
-    let bidder: Signer;
-
-    beforeEach(async () => {
-      [admin, curator, bidder] = await ethers.getSigners();
-      auctionHouse = (await deploy()).connect(curator) as AuctionHouse;
-      await mint(media);
-      await approveAuction(media, auctionHouse);
-      await createAuction(
-        auctionHouse.connect(admin),
-        await curator.getAddress()
-      );
-    });
-
-    it("should revert if the auctionHouse does not exist", async () => {
-      await expect(
-        auctionHouse.setAuctionApproval(1, true)
-      ).eventually.rejectedWith(revert`Auction doesn't exist`);
-    });
-
-    it("should revert if not called by the curator", async () => {
-      await expect(
-        auctionHouse.connect(admin).setAuctionApproval(0, true)
-      ).eventually.rejectedWith(revert`Must be auction curator`);
-    });
-
-    it("should revert if the auction has already started", async () => {
-      await auctionHouse.setAuctionApproval(0, true);
-      await auctionHouse
-        .connect(bidder)
-        .createBid(0, ONE_ETH, { value: ONE_ETH });
-      await expect(
-        auctionHouse.setAuctionApproval(0, false)
-      ).eventually.rejectedWith(revert`Auction has already started`);
-    });
-
-    it("should set the auction as approved", async () => {
-      await auctionHouse.setAuctionApproval(0, true);
-
-      expect((await auctionHouse.auctions(0)).approved).to.eq(true);
-    });
-
-    it("should emit an AuctionApproved event", async () => {
-      const block = await ethers.provider.getBlockNumber();
-      await auctionHouse.setAuctionApproval(0, true);
-      const events = await auctionHouse.queryFilter(
-        auctionHouse.filters.AuctionApprovalUpdated(null, null, null, null),
-        block
-      );
-      expect(events.length).eq(1);
-      const logDescription = auctionHouse.interface.parseLog(events[0]);
-
-      expect(logDescription.args.approved).to.eq(true);
-    });
-  });
-
   describe("#setAuctionReservePrice", () => {
     let auctionHouse: AuctionHouse;
-    let admin: Signer;
-    let creator: Signer;
-    let curator: Signer;
+    let admin: Signer;    
+    let auctioneer: Signer;
+    let tokenOwner: Signer;
     let bidder: Signer;
 
     beforeEach(async () => {
-      [admin, creator, curator, bidder] = await ethers.getSigners();
-      auctionHouse = (await deploy()).connect(curator) as AuctionHouse;
-      await mint(media.connect(creator));
-      await approveAuction(
-        media.connect(creator),
-        auctionHouse.connect(creator)
-      );
-      await createAuction(
-        auctionHouse.connect(creator),
-        await curator.getAddress()
+      [admin, auctioneer, tokenOwner, bidder] = await ethers.getSigners();
+      auctionHouse = (await deploy()) as AuctionHouse;      
+      await testERC721.mint(await tokenOwner.getAddress(), 0);
+      await testERC721.connect(tokenOwner).setApprovalForAll(auctionHouse.address, true);
+      await createAuction(auctionHouse.connect(admin));      
+      await auctionHouse.grantRole(
+        await auctionHouse.AUCTIONEER(), 
+        await auctioneer.getAddress()
       );
     });
 
@@ -346,15 +236,14 @@ describe("AuctionHouse", () => {
       ).eventually.rejectedWith(revert`Auction doesn't exist`);
     });
 
-    it("should revert if not called by the curator or owner", async () => {
+    it("should revert if not called by admin or auctioneer", async () => {
       await expect(
-        auctionHouse.connect(admin).setAuctionReservePrice(0, TWO_ETH)
-      ).eventually.rejectedWith(revert`Must be auction curator`);
+        auctionHouse.connect(bidder).setAuctionReservePrice(0, TWO_ETH)
+      ).eventually.rejectedWith(revert`Caller must be designated auctioneer`);
     });
 
     it("should revert if the auction has already started", async () => {
-      await auctionHouse.setAuctionReservePrice(0, TWO_ETH);
-      await auctionHouse.setAuctionApproval(0, true);
+      await auctionHouse.setAuctionReservePrice(0, TWO_ETH);      
       await auctionHouse
         .connect(bidder)
         .createBid(0, TWO_ETH, { value: TWO_ETH });
@@ -363,17 +252,24 @@ describe("AuctionHouse", () => {
       ).eventually.rejectedWith(revert`Auction has already started`);
     });
 
-    it("should set the auction reserve price when called by the curator", async () => {
+    it("should set the auction reserve price when called by admin", async () => {
       await auctionHouse.setAuctionReservePrice(0, TWO_ETH);
 
       expect((await auctionHouse.auctions(0)).reservePrice).to.eq(TWO_ETH);
     });
 
-    it("should set the auction reserve price when called by the token owner", async () => {
-      await auctionHouse.connect(creator).setAuctionReservePrice(0, TWO_ETH);
+    it("should set the auction reserve price when called by auctioneer", async () => {
+      await auctionHouse.connect(auctioneer).setAuctionReservePrice(0, TWO_ETH);
 
       expect((await auctionHouse.auctions(0)).reservePrice).to.eq(TWO_ETH);
     });
+
+    // TODO - Add in support for secondary market
+    // it("should set the auction reserve price when called by the token owner", async () => {
+    //   await auctionHouse.connect(tokenOwner).setAuctionReservePrice(0, TWO_ETH);
+
+    //   expect((await auctionHouse.auctions(0)).reservePrice).to.eq(TWO_ETH);
+    // });
 
     it("should emit an AuctionReservePriceUpdated event", async () => {
       const block = await ethers.provider.getBlockNumber();
@@ -388,24 +284,21 @@ describe("AuctionHouse", () => {
       expect(logDescription.args.reservePrice).to.eq(TWO_ETH);
     });
   });
-
+  
   describe("#createBid", () => {
     let auctionHouse: AuctionHouse;
     let admin: Signer;
-    let curator: Signer;
+    let tokenOwner: Signer;
     let bidderA: Signer;
     let bidderB: Signer;
 
     beforeEach(async () => {
-      [admin, curator, bidderA, bidderB] = await ethers.getSigners();
+      [admin, tokenOwner, bidderA, bidderB] = await ethers.getSigners();
       auctionHouse = (await (await deploy()).connect(bidderA)) as AuctionHouse;
-      await mint(media);
-      await approveAuction(media, auctionHouse);
-      await createAuction(
-        auctionHouse.connect(admin),
-        await curator.getAddress()
-      );
-      await auctionHouse.connect(curator).setAuctionApproval(0, true);
+      await testERC721.mint(await tokenOwner.getAddress(), 0);
+      await testERC721.connect(tokenOwner).setApprovalForAll(auctionHouse.address, true);
+      
+      await createAuction(auctionHouse.connect(admin));      
     });
 
     it("should revert if the specified auction does not exist", async () => {
@@ -414,27 +307,12 @@ describe("AuctionHouse", () => {
       ).eventually.rejectedWith(revert`Auction doesn't exist`);
     });
 
-    it("should revert if the specified auction is not approved", async () => {
-      await auctionHouse.connect(curator).setAuctionApproval(0, false);
-      await expect(
-        auctionHouse.createBid(0, ONE_ETH, { value: ONE_ETH })
-      ).eventually.rejectedWith(revert`Auction must be approved by curator`);
-    });
-
     it("should revert if the bid is less than the reserve price", async () => {
       await expect(
         auctionHouse.createBid(0, 0, { value: 0 })
       ).eventually.rejectedWith(revert`Must send at least reservePrice`);
     });
-
-    it("should revert if the bid is invalid for share splitting", async () => {
-      await expect(
-        auctionHouse.createBid(0, ONE_ETH.add(1), {
-          value: ONE_ETH.add(1),
-        })
-      ).eventually.rejectedWith(revert`Bid invalid for share splitting`);
-    });
-
+    
     it("should revert if msg.value does not equal specified amount", async () => {
       await expect(
         auctionHouse.createBid(0, ONE_ETH, {
@@ -444,6 +322,8 @@ describe("AuctionHouse", () => {
         revert`Sent ETH Value does not match specified bid amount`
       );
     });
+
+    
     describe("first bid", () => {
       it("should set the first bid time", async () => {
         // TODO: Fix this test on Sun Oct 04 2274
@@ -509,7 +389,8 @@ describe("AuctionHouse", () => {
         expect(logDescription.args.extended).to.eq(false);
       });
     });
-
+  
+    
     describe("second bid", () => {
       beforeEach(async () => {
         auctionHouse = auctionHouse.connect(bidderB) as AuctionHouse;
@@ -681,20 +562,20 @@ describe("AuctionHouse", () => {
   describe("#cancelAuction", () => {
     let auctionHouse: AuctionHouse;
     let admin: Signer;
-    let creator: Signer;
-    let curator: Signer;
+    let auctioneer: Signer;
+    let tokenOwner: Signer;    
     let bidder: Signer;
 
     beforeEach(async () => {
-      [admin, creator, curator, bidder] = await ethers.getSigners();
-      auctionHouse = (await deploy()).connect(creator) as AuctionHouse;
-      await mint(media.connect(creator));
-      await approveAuction(media.connect(creator), auctionHouse);
-      await createAuction(
-        auctionHouse.connect(creator),
-        await curator.getAddress()
+      [admin, auctioneer, tokenOwner, bidder] = await ethers.getSigners();
+      auctionHouse = (await (await deploy())) as AuctionHouse;
+      await testERC721.mint(await tokenOwner.getAddress(), 0);
+      await testERC721.connect(tokenOwner).setApprovalForAll(auctionHouse.address, true);
+      await auctionHouse.grantRole(
+        await auctionHouse.AUCTIONEER(), 
+        await auctioneer.getAddress()
       );
-      await auctionHouse.connect(curator).setAuctionApproval(0, true);
+      await createAuction(auctionHouse.connect(admin));
     });
 
     it("should revert if the auction does not exist", async () => {
@@ -703,11 +584,11 @@ describe("AuctionHouse", () => {
       );
     });
 
-    it("should revert if not called by a creator or curator", async () => {
+    it("should revert if not called by admin or auctioneer", async () => {
       await expect(
         auctionHouse.connect(bidder).cancelAuction(0)
       ).eventually.rejectedWith(
-        `Can only be called by auction creator or curator`
+        `Caller must be designated auctioneer`
       );
     });
 
@@ -720,26 +601,24 @@ describe("AuctionHouse", () => {
       );
     });
 
-    it("should be callable by the creator", async () => {
-      await auctionHouse.cancelAuction(0);
+    it("should be callable by the admin", async () => {
+      await auctionHouse.connect(admin).cancelAuction(0);
 
       const auctionResult = await auctionHouse.auctions(0);
 
       expect(auctionResult.amount.toNumber()).to.eq(0);
       expect(auctionResult.duration.toNumber()).to.eq(0);
       expect(auctionResult.firstBidTime.toNumber()).to.eq(0);
-      expect(auctionResult.reservePrice.toNumber()).to.eq(0);
-      expect(auctionResult.curatorFeePercentage).to.eq(0);
+      expect(auctionResult.reservePrice.toNumber()).to.eq(0);      
       expect(auctionResult.tokenOwner).to.eq(ethers.constants.AddressZero);
-      expect(auctionResult.bidder).to.eq(ethers.constants.AddressZero);
-      expect(auctionResult.curator).to.eq(ethers.constants.AddressZero);
+      expect(auctionResult.bidder).to.eq(ethers.constants.AddressZero);      
       expect(auctionResult.auctionCurrency).to.eq(ethers.constants.AddressZero);
 
-      expect(await media.ownerOf(0)).to.eq(await creator.getAddress());
+      expect(await testERC721.ownerOf(0)).to.eq(await tokenOwner.getAddress());
     });
 
-    it("should be callable by the curator", async () => {
-      await auctionHouse.connect(curator).cancelAuction(0);
+    it("should be callable by the auctioneer", async () => {
+      await auctionHouse.connect(auctioneer).cancelAuction(0);
 
       const auctionResult = await auctionHouse.auctions(0);
 
@@ -747,12 +626,10 @@ describe("AuctionHouse", () => {
       expect(auctionResult.duration.toNumber()).to.eq(0);
       expect(auctionResult.firstBidTime.toNumber()).to.eq(0);
       expect(auctionResult.reservePrice.toNumber()).to.eq(0);
-      expect(auctionResult.curatorFeePercentage).to.eq(0);
       expect(auctionResult.tokenOwner).to.eq(ethers.constants.AddressZero);
-      expect(auctionResult.bidder).to.eq(ethers.constants.AddressZero);
-      expect(auctionResult.curator).to.eq(ethers.constants.AddressZero);
+      expect(auctionResult.bidder).to.eq(ethers.constants.AddressZero);      
       expect(auctionResult.auctionCurrency).to.eq(ethers.constants.AddressZero);
-      expect(await media.ownerOf(0)).to.eq(await creator.getAddress());
+      expect(await testERC721.ownerOf(0)).to.eq(await tokenOwner.getAddress());
     });
 
     it("should emit an AuctionCanceled event", async () => {
@@ -766,31 +643,28 @@ describe("AuctionHouse", () => {
       const logDescription = auctionHouse.interface.parseLog(events[0]);
 
       expect(logDescription.args.tokenId.toNumber()).to.eq(0);
-      expect(logDescription.args.tokenOwner).to.eq(await creator.getAddress());
-      expect(logDescription.args.tokenContract).to.eq(media.address);
+      expect(logDescription.args.tokenOwner).to.eq(await tokenOwner.getAddress());
+      expect(logDescription.args.tokenContract).to.eq(testERC721.address);
     });
   });
+  
 
   describe("#endAuction", () => {
     let auctionHouse: AuctionHouse;
     let admin: Signer;
-    let creator: Signer;
-    let curator: Signer;
-    let bidder: Signer;
-    let other: Signer;
+    let auctioneer: Signer;
+    let tokenOwner: Signer;
+    let bidder: Signer;    
     let badBidder: BadBidder;
 
     beforeEach(async () => {
-      [admin, creator, curator, bidder, other] = await ethers.getSigners();
-      auctionHouse = (await deploy()) as AuctionHouse;
-      await mint(media.connect(creator));
-      await approveAuction(media.connect(creator), auctionHouse);
-      await createAuction(
-        auctionHouse.connect(creator),
-        await curator.getAddress()
-      );
-      await auctionHouse.connect(curator).setAuctionApproval(0, true);
-      badBidder = await deployBidder(auctionHouse.address, media.address);
+      [admin, auctioneer, tokenOwner, bidder] = await ethers.getSigners();
+
+      auctionHouse = (await (await deploy())) as AuctionHouse;
+      await testERC721.mint(await tokenOwner.getAddress(), 0);
+      await testERC721.connect(tokenOwner).setApprovalForAll(auctionHouse.address, true);      
+      await createAuction(auctionHouse.connect(admin));
+      badBidder = await deployBidder(auctionHouse.address, testERC721.address);
     });
 
     it("should revert if the auction does not exist", async () => {
@@ -824,7 +698,7 @@ describe("AuctionHouse", () => {
 
       await auctionHouse.endAuction(0);
 
-      expect(await media.ownerOf(0)).to.eq(await creator.getAddress());
+      expect(await testERC721.ownerOf(0)).to.eq(await tokenOwner.getAddress());
       expect(await ethers.provider.getBalance(badBidder.address)).to.eq(
         TWO_ETH
       );
@@ -844,38 +718,27 @@ describe("AuctionHouse", () => {
       it("should transfer the NFT to the winning bidder", async () => {
         await auctionHouse.endAuction(0);
 
-        expect(await media.ownerOf(0)).to.eq(await bidder.getAddress());
+        expect(await testERC721.ownerOf(0)).to.eq(await bidder.getAddress());
       });
 
-      it("should pay the curator their curatorFee percentage", async () => {
+      it("should pay the token owner the remainder of the winning bid", async () => {
         const beforeBalance = await ethers.provider.getBalance(
-          await curator.getAddress()
+          await tokenOwner.getAddress()
         );
         await auctionHouse.endAuction(0);
-        const expectedCuratorFee = "42500000000000000";
-        const curatorBalance = await ethers.provider.getBalance(
-          await curator.getAddress()
-        );
-        await expect(curatorBalance.sub(beforeBalance).toString()).to.eq(
-          expectedCuratorFee
-        );
-      });
-
-      it("should pay the creator the remainder of the winning bid", async () => {
-        const beforeBalance = await ethers.provider.getBalance(
-          await creator.getAddress()
-        );
-        await auctionHouse.endAuction(0);
-        const expectedProfit = "957500000000000000";
-        const creatorBalance = await ethers.provider.getBalance(
-          await creator.getAddress()
-        );
-        const wethBalance = await weth.balanceOf(await creator.getAddress());
+        const expectedProfit = "1000000000000000000";
+        const tokenOwnerBalance = await ethers.provider.getBalance(
+          await tokenOwner.getAddress()
+        );        
+        const wethBalance = await weth.balanceOf(await tokenOwner.getAddress());
+        const wethBalanceOfBidder = await weth.balanceOf(await bidder.getAddress());
+        
         await expect(
-          creatorBalance.sub(beforeBalance).add(wethBalance).toString()
+          tokenOwnerBalance.sub(beforeBalance).add(wethBalance).toString()
         ).to.eq(expectedProfit);
       });
 
+      
       it("should emit an AuctionEnded event", async () => {
         const block = await ethers.provider.getBlockNumber();
         const auctionData = await auctionHouse.auctions(0);
@@ -888,9 +751,7 @@ describe("AuctionHouse", () => {
             null,
             null,
             null,
-            null,
-            null,
-            null
+            null,                        
           ),
           block
         );
@@ -898,15 +759,11 @@ describe("AuctionHouse", () => {
         const logDescription = auctionHouse.interface.parseLog(events[0]);
 
         expect(logDescription.args.tokenId).to.eq(0);
-        expect(logDescription.args.tokenOwner).to.eq(auctionData.tokenOwner);
-        expect(logDescription.args.curator).to.eq(auctionData.curator);
+        expect(logDescription.args.tokenOwner).to.eq(auctionData.tokenOwner);        
         expect(logDescription.args.winner).to.eq(auctionData.bidder);
         expect(logDescription.args.amount.toString()).to.eq(
-          "807500000000000000"
-        );
-        expect(logDescription.args.curatorFee.toString()).to.eq(
-          "42500000000000000"
-        );
+          "1000000000000000000"
+        );        
         expect(logDescription.args.auctionCurrency).to.eq(weth.address);
       });
 
@@ -918,15 +775,14 @@ describe("AuctionHouse", () => {
         expect(auctionResult.amount.toNumber()).to.eq(0);
         expect(auctionResult.duration.toNumber()).to.eq(0);
         expect(auctionResult.firstBidTime.toNumber()).to.eq(0);
-        expect(auctionResult.reservePrice.toNumber()).to.eq(0);
-        expect(auctionResult.curatorFeePercentage).to.eq(0);
+        expect(auctionResult.reservePrice.toNumber()).to.eq(0);        
         expect(auctionResult.tokenOwner).to.eq(ethers.constants.AddressZero);
-        expect(auctionResult.bidder).to.eq(ethers.constants.AddressZero);
-        expect(auctionResult.curator).to.eq(ethers.constants.AddressZero);
+        expect(auctionResult.bidder).to.eq(ethers.constants.AddressZero);        
         expect(auctionResult.auctionCurrency).to.eq(
           ethers.constants.AddressZero
         );
       });
+    
     });
   });
 });

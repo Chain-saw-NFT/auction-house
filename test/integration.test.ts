@@ -1,4 +1,5 @@
 // @ts-ignore
+/*
 import { ethers } from "hardhat";
 import chai, { expect } from "chai";
 import asPromised from "chai-as-promised";
@@ -449,3 +450,4 @@ describe("integration", () => {
     });
   });
 });
+*/

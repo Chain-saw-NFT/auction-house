@@ -1,11 +1,6 @@
 // @ts-ignore
 import { ethers } from "hardhat";
 import {
-  MarketFactory,
-  Media,
-  MediaFactory,
-} from "@zoralabs/core/dist/typechain";
-import {
   BadBidder,
   AuctionHouse,
   WETH,
@@ -40,25 +35,16 @@ export const deployOtherNFTs = async () => {
   return { bad, test };
 };
 
-export const deployZoraProtocol = async () => {
-  const [deployer] = await ethers.getSigners();
-  const market = await (await new MarketFactory(deployer).deploy()).deployed();
-  const media = await (
-    await new MediaFactory(deployer).deploy(market.address)
-  ).deployed();
-  await market.configure(media.address);
-  return { market, media };
-};
-
 export const deployBidder = async (auction: string, nftContract: string) => {
   return (await (
-    await (await ethers.getContractFactory("BadBidder")).deploy(
-      auction,
-      nftContract
-    )
+    await (await ethers.getContractFactory("BadBidder")).deploy(auction)
   ).deployed()) as BadBidder;
 };
 
+export const revert = (messages: TemplateStringsArray) =>
+  `VM Exception while processing transaction: revert ${messages[0]}`;
+
+  /*
 export const mint = async (media: Media) => {
   const metadataHex = ethers.utils.formatBytes32String("{}");
   const metadataHash = await sha256(metadataHex);
@@ -77,13 +63,4 @@ export const mint = async (media: Media) => {
     }
   );
 };
-
-export const approveAuction = async (
-  media: Media,
-  auctionHouse: AuctionHouse
-) => {
-  await media.approve(auctionHouse.address, 0);
-};
-
-export const revert = (messages: TemplateStringsArray) =>
-  `VM Exception while processing transaction: revert ${messages[0]}`;
+*/

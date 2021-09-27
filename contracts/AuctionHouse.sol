@@ -19,6 +19,7 @@ import { SafeMath } from "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IAuctionHouse } from "./interfaces/IAuctionHouse.sol";
 import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
+import "hardhat/console.sol";
 
 interface IWETH {
     function deposit() external payable;
@@ -71,6 +72,11 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {
         _; 
     }
 
+    modifier onlyAuctioneer() {
+        require(hasRole(AUCTIONEER, msg.sender), "Caller must be designated auctioneer");
+        _;
+    }
+
     /*
      * Constructor
      */
@@ -79,6 +85,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {
         timeBuffer = 15 * 60; // extend 15 minutes after every bid made in last 15 minutes
         minBidIncrementPercentage = 5; // 5%
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _setupRole(AUCTIONEER, msg.sender);
     }
 
     /**
@@ -95,7 +102,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {
         public 
         override 
         nonReentrant 
-        onlyRole(AUCTIONEER)
+        onlyAuctioneer
         returns (uint256) 
     {        
         require(
@@ -130,7 +137,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {
         external 
         override 
         auctionExists(auctionId) 
-        onlyRole(AUCTIONEER)
+        onlyAuctioneer
     {        
         require(auctions[auctionId].firstBidTime == 0, "Auction has already started");
 
@@ -147,7 +154,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {
     function setRoyalty(address tokenContract, address payable beneficiary, uint royaltyPercentage) 
         external 
         override 
-        onlyRole(AUCTIONEER)   
+        onlyAuctioneer   
         onlyFirstAuction(tokenContract)     
     {                
         royaltyRegistry[tokenContract] = Royalty({
@@ -319,7 +326,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {
         override 
         nonReentrant 
         auctionExists(auctionId)
-        onlyRole(AUCTIONEER)
+        onlyAuctioneer
     {        
         require(
             uint256(auctions[auctionId].firstBidTime) == 0,
