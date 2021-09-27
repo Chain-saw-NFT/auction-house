@@ -32,7 +32,7 @@ interface IAuctionHouse {
 
     struct Royalty {
         //The address of the beneficiary who will be receiving royalties for each sale
-        address payable beneficiaryAddress;
+        address payable beneficiary;
         //The percentage of the sale the commission address receives
         //If percentage is set to 0, the full amount will be sent
         uint256 royaltyPercentage;

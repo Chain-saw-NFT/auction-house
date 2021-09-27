@@ -113,7 +113,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
 
     function setBeneficiaryAddress(address tokenContract, address payable newBeneficiary) external override {
         // TODO - access controls
-        royaltyRegistry[tokenContract].beneficiaryAddress = newBeneficiary;
+        royaltyRegistry[tokenContract].beneficiary = newBeneficiary;
         emit BeneficiaryAddressUpdated(tokenContract, commissionAddress);
     }
 
@@ -237,7 +237,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
             return;
         }
 
-        if (auctions[auctionId].commissionAddress != address(0) && auctions[auctionId].commissionPercentage > 0){
+        if (royaltyRegistry[auctions[auctionId].tokenContract].benf != address(0) && auctions[auctionId].commissionPercentage > 0){
             uint256 commissionAmount = _generateCommission(auctionId);
             uint256 amountRemaining = tokenOwnerProfit.sub(commissionAmount);
 
