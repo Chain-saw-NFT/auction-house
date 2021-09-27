@@ -1,14 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0
+
+/// @title Chain/Saw auction house
+
+// LICENSE
+// AuctionHouse.sol is a modified version of Zora's AuctionHouse.sol:
+// https://github.com/ourzora/auction-house/blob/d87346f9286130af529869b8402733b1fabe885b/contracts/AuctionHouse.sol
+//
+// AuctionHouse.sol source code Copyright Zora licensed under the GPL-3.0 license.
+// Modified with love by Chain/Saw.
+
 pragma solidity ^0.8.7;
 
 import { IERC721, IERC165 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Counters} from "@openzeppelin/contracts/utils/Counters.sol";
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { Counters } from "@openzeppelin/contracts/utils/Counters.sol";
+import { SafeMath } from "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IAuctionHouse } from "./interfaces/IAuctionHouse.sol";
-import "@openzeppelin/contracts/access/AccessControl.sol";
+import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
 
 interface IWETH {
     function deposit() external payable;
@@ -46,7 +56,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {
     Counters.Counter private _auctionIdTracker;
     
     // The role that has permissions to create and cancel auctions
-    bytes32 public constant AUCTIONEER_ROLE = keccak256("AUCTIONEER_ROLE");
+    bytes32 public constant AUCTIONEER = keccak256("AUCTIONEER");
 
     /**
      * @notice Require that the specified auction exists
@@ -85,7 +95,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {
         public 
         override 
         nonReentrant 
-        onlyRole(AUCTIONEER_ROLE)
+        onlyRole(AUCTIONEER)
         returns (uint256) 
     {        
         require(
@@ -120,7 +130,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {
         external 
         override 
         auctionExists(auctionId) 
-        onlyRole(AUCTIONEER_ROLE)
+        onlyRole(AUCTIONEER)
     {        
         require(auctions[auctionId].firstBidTime == 0, "Auction has already started");
 
@@ -137,7 +147,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {
     function setRoyalty(address tokenContract, address payable beneficiary, uint royaltyPercentage) 
         external 
         override 
-        onlyRole(AUCTIONEER_ROLE)   
+        onlyRole(AUCTIONEER)   
         onlyFirstAuction(tokenContract)     
     {                
         royaltyRegistry[tokenContract] = Royalty({
@@ -309,7 +319,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {
         override 
         nonReentrant 
         auctionExists(auctionId)
-        onlyRole(AUCTIONEER_ROLE)
+        onlyRole(AUCTIONEER)
     {        
         require(
             uint256(auctions[auctionId].firstBidTime) == 0,
