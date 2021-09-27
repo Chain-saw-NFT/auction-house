@@ -2,9 +2,8 @@
 
 // FOR TEST PURPOSES ONLY. NOT PRODUCTION SAFE
 // Source: https://github.com/gnosis/canonical-weth/blob/0dd1ea3e295eef916d0c6223ec63141137d22d67/contracts/WETH9.sol
-pragma solidity 0.6.8;
+pragma solidity ^0.8.7;
 import "hardhat/console.sol";
-
 
 contract WETH {
     string public name     = "Wrapped Ether";
@@ -30,7 +29,7 @@ contract WETH {
     function withdraw(uint wad) public {
         require(balanceOf[msg.sender] >= wad);
         balanceOf[msg.sender] -= wad;
-        msg.sender.transfer(wad);
+        payable(msg.sender).transfer(wad);
         emit Withdrawal(msg.sender, wad);
     }
 
@@ -54,10 +53,11 @@ contract WETH {
     {
         require(balanceOf[src] >= wad);
 
-        if (src != msg.sender && allowance[src][msg.sender] != uint(-1)) {
-            require(allowance[src][msg.sender] >= wad);
-            allowance[src][msg.sender] -= wad;
-        }
+        // TODO - What is this testing?
+        // if (src != msg.sender && allowance[src][msg.sender] != uint(-1)) {
+        //     require(allowance[src][msg.sender] >= wad);
+        //     allowance[src][msg.sender] -= wad;
+        // }
 
         balanceOf[src] -= wad;
         balanceOf[dst] += wad;

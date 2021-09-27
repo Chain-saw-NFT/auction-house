@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0
 
-pragma solidity 0.6.8;
-pragma experimental ABIEncoderV2;
+pragma solidity ^0.8.7;
 
 /**
  * @title Interface for Auction Houses
@@ -122,11 +121,9 @@ interface IAuctionHouse {
         address auctionCurrency
     ) external returns (uint256);
 
-
     function setAuctionReservePrice(uint256 auctionId, uint256 reservePrice) external;
 
     function setRoyalty(address tokenContract, address payable beneficiaryAddress, uint256 royaltyPercentage) external;
-
 
     function createBid(uint256 auctionId, uint256 amount) external payable;
 
