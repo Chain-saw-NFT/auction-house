@@ -64,12 +64,12 @@ interface IAuctionHouse {
         uint256 reservePrice
     );
 
-    event AuctionBeneficiaryAddressUpdated(
+    event BeneficiaryAddressUpdated(
         address indexed tokenContract,
-        address indexed newBeneficiaryAddress
+        address indexed newBeneficiary
     );
 
-    event AuctionRoyaltyPercentageUpdated(
+    event RoyaltyPercentageUpdated(
         address indexed tokenContract,
         uint256 indexed newRoyaltyPercentage
     );
@@ -131,7 +131,7 @@ interface IAuctionHouse {
 
     function setAuctionReservePrice(uint256 auctionId, uint256 reservePrice) external;
 
-    function setBeneficiaryAddress(address tokenContract, address beneficiaryAddress) external;
+    function setBeneficiaryAddress(address tokenContract, address payable beneficiaryAddress) external;
 
     function setRoyaltyPercentage(address tokenContract, uint256 royaltyPercentage) external;
 

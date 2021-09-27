@@ -38,6 +38,9 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
     // A mapping of all of the auctions currently running.
     mapping(uint256 => IAuctionHouse.Auction) public auctions;
 
+    //A mapping of token contracts to royalty objects
+    mapping(address => IAuctionHouse.Royalty) public royaltyRegistry
+
     bytes4 constant interfaceId = 0x80ac58cd; // 721 interface id
 
     Counters.Counter private _auctionIdTracker;
@@ -68,9 +71,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
         address tokenContract,
         uint256 duration,
         uint256 reservePrice,                
-        address auctionCurrency,
-        address commissionAddress,
-        uint8 commissionPercentage
+        address auctionCurrency
     ) public override nonReentrant returns (uint256) {
         // TODO - Access controls
         require(
@@ -89,9 +90,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
             reservePrice: reservePrice,            
             tokenOwner: tokenOwner,
             bidder: address(0),            
-            auctionCurrency: auctionCurrency,
-            commissionAddress: commissionAddress,
-            commissionPercentage: commissionPercentage
+            auctionCurrency: auctionCurrency
         });
 
         IERC721(tokenContract).transferFrom(tokenOwner, address(this), tokenId);
@@ -112,22 +111,18 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
         emit AuctionReservePriceUpdated(auctionId, auctions[auctionId].tokenId, auctions[auctionId].tokenContract, reservePrice);
     }
 
-    function updateCommissionAddress(uint256 auctionId, address commissionAddress) external override auctionExists(auctionId) {
+    function setBeneficiaryAddress(address tokenContract, address payable newBeneficiary) external override {
         // TODO - access controls
-        require(auctions[auctionId].firstBidTime == 0, "Auction has already started");
-
-        auctions[auctionId].commissionAddress = commissionAddress;
-
-        emit AuctionCommissionAddressUpdated(auctionId, commissionAddress);
+        royaltyRegistry[tokenContract].beneficiaryAddress = newBeneficiary;
+        emit BeneficiaryAddressUpdated(tokenContract, commissionAddress);
     }
 
-    function updateCommissionPercentage(uint256 auctionId, uint256 commissionPercentage) external override auctionExists(auctionId) {
+    function setRoyaltyPercentage(address tokenContract, uint256 newRoyaltyPercentage) external override {
         // TODO - access controls
-        require(auctions[auctionId].firstBidTime == 0, "Auction has already started");
 
-        auctions[auctionId].commissionPercentage = commissionPercentage;
+        royaltyRegistry[tokenContract].royaltyPercentage = newRoyaltyPercentage;
 
-        emit AuctionCommissionPercentageUpdated(auctionId, commissionPercentage);
+        emit RoyaltyPercentageUpdated(tokenContract, newRoyaltyPercentage);
     }
 
     /**
