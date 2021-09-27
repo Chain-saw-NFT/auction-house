@@ -237,23 +237,23 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
             return;
         }
 
-        if (royaltyRegistry[auctions[auctionId].tokenContract].benf != address(0) && auctions[auctionId].commissionPercentage > 0){
-            uint256 commissionAmount = _generateCommission(auctionId);
-            uint256 amountRemaining = tokenOwnerProfit.sub(commissionAmount);
-
-            _handleOutgoingBid(auctions[auctionId].tokenOwner, amountRemaining, auctions[auctionId].auctionCurrency);
+        if (royaltyRegistry[auctions[auctionId].tokenContract].benficiary != address(0) && royaltyRegistry[auctions[auctionId].tokenContract].royaltyPercentage > 0){
+            uint256 royaltyAmount = _generateRoyaltyAmount(tokenContract);
+            uint256 amountRemaining = tokenOwnerProfit.sub(royaltyAmount);
 
             _handleOutgoingBid(auctions[auctionId].commissionAddress, commissionAmount, auctions[auctionId].auctionCurrency);
+            _handleOutgoingBid(auctions[auctionId].tokenOwner, amountRemaining, auctions[auctionId].auctionCurrency);
 
-            emit AuctionWithCommissionEnded(
+
+            emit AuctionWithRoyaltiesEnded(
                 auctionId,
                 auctions[auctionId].tokenId,
                 auctions[auctionId].tokenContract,
                 auctions[auctionId].tokenOwner,            
                 auctions[auctionId].bidder,
-                tokenOwnerProfit,
-                auctions[auctionId].commissionAddress,
-                commissionAmount,            
+                amountRemaining,
+                royaltyRegistry[auctions[auctionId].tokenContract].benficiary,
+                royaltyAmount,            
                 currency
             );
 
@@ -324,8 +324,8 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
         }
     }
 
-    function _generateCommission(uint256 auctionId) internal returns (uint256) {
-        return auctions[auctionId].amount.div(100).mul(auctions[auctionId].commissionPercentage);
+    function _generateRoyaltyAmount(address tokenContract) internal returns (uint256) {
+        return auctions[auctionId].amount.div(100).mul(royaltyRegistry[tokenContract].royaltyPercentage);
     }
 
     function _safeTransferETH(address to, uint256 value) internal returns (bool) {
