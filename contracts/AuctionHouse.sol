@@ -19,7 +19,7 @@ interface IWETH {
 }
 
 /**
- * @title The ChainSaw AuctionHouse
+ * @title The Chain/Saw AuctionHouse
  */
 contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
     using SafeMath for uint256;
@@ -32,14 +32,14 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
     // The minimum percentage difference between the last bid amount and the current bid.
     uint8 public minBidIncrementPercentage;
 
-    // The address of the zora protocol to use via this contract
-    address public zora;
-
     // / The address of the WETH contract, so that any ETH transferred can be handled as an ERC-20
     address public wethAddress;
 
     // A mapping of all of the auctions currently running.
     mapping(uint256 => IAuctionHouse.Auction) public auctions;
+
+    //A mapping of token contracts to royalty objects
+    mapping(address => IAuctionHouse.Royalty) public royaltyRegistry;
 
     bytes4 constant interfaceId = 0x80ac58cd; // 721 interface id
 
@@ -56,12 +56,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
     /*
      * Constructor
      */
-    constructor(address _zora, address _weth) public {
-        require(
-            IERC165(_zora).supportsInterface(interfaceId),
-            "Doesn't support NFT interface"
-        );
-        zora = _zora;
+    constructor(address _weth) public {
         wethAddress = _weth;
         timeBuffer = 15 * 60; // extend 15 minutes after every bid made in last 15 minutes
         minBidIncrementPercentage = 5; // 5%
@@ -115,6 +110,20 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
 
         emit AuctionReservePriceUpdated(auctionId, auctions[auctionId].tokenId, auctions[auctionId].tokenContract, reservePrice);
     }
+
+    /**
+     * @notice Set royalty information for a given token contract.
+     * @dev Store the royal details in the royaltyRegistry mapping and emit an royaltySet event.     
+     */
+    function setRoyalty(address tokenContract, address payable beneficiary, uint royaltyPercentage) external override {
+        // TODO - access controls
+        royaltyRegistry[tokenContract] = Royalty({
+            beneficiary: beneficiary,
+            royaltyPercentage: royaltyPercentage
+        });
+        emit RoyaltySet(tokenContract, beneficiary, royaltyPercentage);
+    }
+
 
     /**
      * @notice Create a bid on a token, with a given amount.
@@ -220,6 +229,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
         address currency = auctions[auctionId].auctionCurrency == address(0) ? wethAddress : auctions[auctionId].auctionCurrency;
 
         uint256 tokenOwnerProfit = auctions[auctionId].amount;
+        address tokenContract = auctions[auctionId].tokenContract;
  
         // Otherwise, transfer the token to the winner and pay out the participants below
         try IERC721(auctions[auctionId].tokenContract).safeTransferFrom(address(this), auctions[auctionId].bidder, auctions[auctionId].tokenId) {} catch {
@@ -227,18 +237,43 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
             _cancelAuction(auctionId);
             return;
         }
-        
-        _handleOutgoingBid(auctions[auctionId].tokenOwner, tokenOwnerProfit, auctions[auctionId].auctionCurrency);
 
-        emit AuctionEnded(
-            auctionId,
-            auctions[auctionId].tokenId,
-            auctions[auctionId].tokenContract,
-            auctions[auctionId].tokenOwner,            
-            auctions[auctionId].bidder,
-            tokenOwnerProfit,            
-            currency
-        );
+        if (royaltyRegistry[tokenContract].beneficiary != address(0) && royaltyRegistry[tokenContract].royaltyPercentage > 0){
+            uint256 royaltyAmount = _generateRoyaltyAmount(auctionId, auctions[auctionId].tokenContract);
+            uint256 amountRemaining = tokenOwnerProfit.sub(royaltyAmount);
+            
+
+            _handleOutgoingBid(royaltyRegistry[tokenContract].beneficiary, royaltyAmount, auctions[auctionId].auctionCurrency);
+            _handleOutgoingBid(auctions[auctionId].tokenOwner, amountRemaining, auctions[auctionId].auctionCurrency);
+
+
+            emit AuctionWithRoyaltiesEnded(
+                auctionId,
+                auctions[auctionId].tokenId,
+                auctions[auctionId].tokenContract,
+                auctions[auctionId].tokenOwner,            
+                auctions[auctionId].bidder,
+                amountRemaining,
+                royaltyRegistry[tokenContract].beneficiary,
+                royaltyAmount,            
+                currency
+            );
+
+
+        } else {
+            _handleOutgoingBid(auctions[auctionId].tokenOwner, tokenOwnerProfit, auctions[auctionId].auctionCurrency);
+
+            emit AuctionEnded(
+                auctionId,
+                auctions[auctionId].tokenId,
+                auctions[auctionId].tokenContract,
+                auctions[auctionId].tokenOwner,            
+                auctions[auctionId].bidder,
+                tokenOwnerProfit,            
+                currency
+            );
+        }
+        
         delete auctions[auctionId];
     }
 
@@ -289,6 +324,10 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
         } else {
             IERC20(currency).safeTransfer(to, amount);
         }
+    }
+
+    function _generateRoyaltyAmount(uint256 auctionId, address tokenContract) internal view returns (uint256) {
+        return auctions[auctionId].amount.div(100).mul(royaltyRegistry[tokenContract].royaltyPercentage);
     }
 
     function _safeTransferETH(address to, uint256 value) internal returns (bool) {

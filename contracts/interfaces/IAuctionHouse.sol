@@ -27,6 +27,16 @@ interface IAuctionHouse {
         // The address of the ERC-20 currency to run the auction with.
         // If set to 0x0, the auction will be run in ETH
         address auctionCurrency;
+        // The address of recipient of the sale commission
+    }
+
+    struct Royalty {
+        //The address of the beneficiary who will be receiving royalties for each sale
+        address payable beneficiary;
+        //The percentage of the sale the commission address receives
+        //If percentage is set to 0, the full amount will be sent
+        uint256 royaltyPercentage;
+
     }
 
     event AuctionCreated(
@@ -50,6 +60,12 @@ interface IAuctionHouse {
         uint256 indexed tokenId,
         address indexed tokenContract,
         uint256 reservePrice
+    );
+
+    event RoyaltySet(
+        address indexed tokenContract,
+        address indexed newBeneficiary,
+        uint256 indexed royaltyPercentage
     );
 
     event AuctionBid(
@@ -79,6 +95,18 @@ interface IAuctionHouse {
         address auctionCurrency
     );
 
+    event AuctionWithRoyaltiesEnded(
+        uint256 indexed auctionId,
+        uint256 indexed tokenId,
+        address indexed tokenContract,
+        address tokenOwner,        
+        address winner,
+        uint256 amount,
+        address beneficiaryAddress,
+        uint256 royaltyAmount,        
+        address auctionCurrency
+    );
+
     event AuctionCanceled(
         uint256 indexed auctionId,
         uint256 indexed tokenId,
@@ -96,6 +124,9 @@ interface IAuctionHouse {
 
 
     function setAuctionReservePrice(uint256 auctionId, uint256 reservePrice) external;
+
+    function setRoyalty(address tokenContract, address payable beneficiaryAddress, uint256 royaltyPercentage) external;
+
 
     function createBid(uint256 auctionId, uint256 amount) external payable;
 
