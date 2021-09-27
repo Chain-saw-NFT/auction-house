@@ -19,7 +19,7 @@ interface IWETH {
 }
 
 /**
- * @title The ChainSaw AuctionHouse
+ * @title The Chain/Saw AuctionHouse
  */
 contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
     using SafeMath for uint256;
