@@ -1,27 +1,36 @@
 // SPDX-License-Identifier: GPL-3.0
 
-pragma solidity 0.6.8;
-pragma experimental ABIEncoderV2;
+/// @title Chain/Saw auction house
 
-import { SafeMath } from "@openzeppelin/contracts/math/SafeMath.sol";
+// LICENSE
+// AuctionHouse.sol is a modified version of Zora's AuctionHouse.sol:
+// https://github.com/ourzora/auction-house/blob/d87346f9286130af529869b8402733b1fabe885b/contracts/AuctionHouse.sol
+//
+// AuctionHouse.sol source code Copyright Zora licensed under the GPL-3.0 license.
+// Modified with love by Chain/Saw.
+
+pragma solidity ^0.8.7;
+
 import { IERC721, IERC165 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
-import {Counters} from "@openzeppelin/contracts/utils/Counters.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { Counters } from "@openzeppelin/contracts/utils/Counters.sol";
+import { SafeMath } from "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IAuctionHouse } from "./interfaces/IAuctionHouse.sol";
+import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
+import "hardhat/console.sol";
 
 interface IWETH {
     function deposit() external payable;
     function withdraw(uint wad) external;
-
     function transfer(address to, uint256 value) external returns (bool);
 }
 
 /**
  * @title The Chain/Saw AuctionHouse
  */
-contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
+contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {  
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
     using Counters for Counters.Counter;
@@ -32,18 +41,23 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
     // The minimum percentage difference between the last bid amount and the current bid.
     uint8 public minBidIncrementPercentage;
 
-    // / The address of the WETH contract, so that any ETH transferred can be handled as an ERC-20
+    // The address of the WETH contract, so that any ETH transferred can be handled as an ERC-20
     address public wethAddress;
 
     // A mapping of all of the auctions currently running.
     mapping(uint256 => IAuctionHouse.Auction) public auctions;
 
-    //A mapping of token contracts to royalty objects
+    // A mapping of token contracts to royalty objects
     mapping(address => IAuctionHouse.Royalty) public royaltyRegistry;
 
-    bytes4 constant interfaceId = 0x80ac58cd; // 721 interface id
-
+    // 721 interface id
+    bytes4 constant interfaceId = 0x80ac58cd; 
+    
+    // Counter for incrementing auctionId
     Counters.Counter private _auctionIdTracker;
+    
+    // The role that has permissions to create and cancel auctions
+    bytes32 public constant AUCTIONEER = keccak256("AUCTIONEER");
 
     /**
      * @notice Require that the specified auction exists
@@ -53,13 +67,25 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
         _;
     }
 
+    modifier onlyFirstAuction(address tokenContract) {
+        require(royaltyRegistry[tokenContract].beneficiary == payable(0), "Royalty has already been set");
+        _; 
+    }
+
+    modifier onlyAuctioneer() {
+        require(hasRole(AUCTIONEER, msg.sender), "Caller must be designated auctioneer");
+        _;
+    }
+
     /*
      * Constructor
      */
-    constructor(address _weth) public {
+    constructor(address _weth) {
         wethAddress = _weth;
         timeBuffer = 15 * 60; // extend 15 minutes after every bid made in last 15 minutes
         minBidIncrementPercentage = 5; // 5%
+        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _setupRole(AUCTIONEER, msg.sender);
     }
 
     /**
@@ -72,8 +98,13 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
         uint256 duration,
         uint256 reservePrice,                
         address auctionCurrency
-    ) public override nonReentrant returns (uint256) {
-        // TODO - Access controls
+    ) 
+        public 
+        override 
+        nonReentrant 
+        onlyAuctioneer
+        returns (uint256) 
+    {        
         require(
             IERC165(tokenContract).supportsInterface(interfaceId),
             "tokenContract does not support ERC721 interface"
@@ -89,7 +120,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
             firstBidTime: 0,
             reservePrice: reservePrice,            
             tokenOwner: tokenOwner,
-            bidder: address(0),            
+            bidder: payable(0),            
             auctionCurrency: auctionCurrency
         });
 
@@ -102,8 +133,12 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
         return auctionId;
     }
 
-    function setAuctionReservePrice(uint256 auctionId, uint256 reservePrice) external override auctionExists(auctionId) {
-        // TODO - access controls
+    function setAuctionReservePrice(uint256 auctionId, uint256 reservePrice) 
+        external 
+        override 
+        auctionExists(auctionId) 
+        onlyAuctioneer
+    {        
         require(auctions[auctionId].firstBidTime == 0, "Auction has already started");
 
         auctions[auctionId].reservePrice = reservePrice;
@@ -113,10 +148,15 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
 
     /**
      * @notice Set royalty information for a given token contract.
-     * @dev Store the royal details in the royaltyRegistry mapping and emit an royaltySet event.     
+     * @dev Store the royal details in the royaltyRegistry mapping and emit an royaltySet event. 
+     * Royalty can only be modified before any auction for tokenContract has started    
      */
-    function setRoyalty(address tokenContract, address payable beneficiary, uint royaltyPercentage) external override {
-        // TODO - access controls
+    function setRoyalty(address tokenContract, address payable beneficiary, uint royaltyPercentage) 
+        external 
+        override 
+        onlyAuctioneer   
+        onlyFirstAuction(tokenContract)     
+    {                
         royaltyRegistry[tokenContract] = Royalty({
             beneficiary: beneficiary,
             royaltyPercentage: royaltyPercentage
@@ -132,11 +172,11 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
      * auction currencies in this contract.
      */
     function createBid(uint256 auctionId, uint256 amount)
-    external
-    override
-    payable
-    auctionExists(auctionId)
-    nonReentrant
+        external
+        override
+        payable
+        auctionExists(auctionId)
+        nonReentrant
     {
         address payable lastBidder = auctions[auctionId].bidder;        
         require(
@@ -167,7 +207,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
         _handleIncomingBid(amount, auctions[auctionId].auctionCurrency);
 
         auctions[auctionId].amount = amount;
-        auctions[auctionId].bidder = msg.sender;
+        auctions[auctionId].bidder = payable(msg.sender);
 
 
         bool extended = false;
@@ -211,7 +251,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
     }
 
     /**
-     * @notice End an auction, finalizing the bid on Zora if applicable and paying out the respective parties.
+     * @notice End an auction and pay out the respective parties.
      * @dev If for some reason the auction cannot be finalized (invalid token recipient, for example),
      * The auction is reset and the NFT is transferred back to the auction creator.
      */
@@ -281,8 +321,13 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
      * @notice Cancel an auction.
      * @dev Transfers the NFT back to the auction creator and emits an AuctionCanceled event
      */
-    function cancelAuction(uint256 auctionId) external override nonReentrant auctionExists(auctionId) {
-        // TODO - access controls
+    function cancelAuction(uint256 auctionId) 
+        external 
+        override 
+        nonReentrant 
+        auctionExists(auctionId)
+        onlyAuctioneer
+    {        
         require(
             uint256(auctions[auctionId].firstBidTime) == 0,
             "Can't cancel an auction once it's begun"
@@ -347,8 +392,6 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard {
         return auctions[auctionId].tokenOwner != address(0);
     }
 
-
-    // TODO: consider reverting if the message sender is not WETH
     receive() external payable {}
     fallback() external payable {}
 }
