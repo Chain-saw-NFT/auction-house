@@ -2,7 +2,7 @@ import chai, { expect } from "chai";
 import asPromised from "chai-as-promised";
 // @ts-ignore
 import { ethers } from "hardhat";
-import { AuctionHouse, BadBidder, TestERC721, BadERC721 } from "../typechain";
+import { AuctionHouse, BadBidder, TestERC721, BadERC721, WETH } from "../typechain";
 import { formatUnits } from "ethers/lib/utils";
 import { BigNumber, Contract, Signer } from "ethers";
 import {
@@ -16,6 +16,9 @@ import {
 import { test } from "mocha";
 
 chai.use(asPromised);
+const AUCTIONEER_ROLE = "0x1d693f62a755e2b3c6494da41af454605b9006057cb3c79b6adda1378f2a50a7";
+const ADMIN_ROLE = "0x0000000000000000000000000000000000000000000000000000000000000000";
+const wethAddr = "0x0000000000000000000000000000000000000000";
 
 describe("AuctionHouse", () => {  
   let weth: Contract;
@@ -34,15 +37,12 @@ describe("AuctionHouse", () => {
 
   async function deploy(): Promise<AuctionHouse> {
     const AuctionHouse = await ethers.getContractFactory("AuctionHouse");
-    const auctionHouse = await AuctionHouse.deploy(weth.address);
+    const auctionHouse = await AuctionHouse.deploy(weth.address, []);
 
     return auctionHouse as AuctionHouse;
   }
 
-  async function createAuction(
-    auctionHouse: AuctionHouse,    
-    currency = "0x0000000000000000000000000000000000000000"
-  ) {
+  async function createAuction(auctionHouse: AuctionHouse, currency = wethAddr) {
     const tokenId = 0;
     const duration = 60 * 60 * 24;
     const reservePrice = BigNumber.from(10).pow(18).div(2);
@@ -56,12 +56,16 @@ describe("AuctionHouse", () => {
     );
   }
 
+  async function mintFor(owner: Signer, tokenId = 0) {
+    await testERC721.mint(await owner.getAddress(), tokenId);
+  }
+
   //////////////////////////////////////////////////
   describe("#constructor", () => {
     it("should be able to deploy", async () => {
+      const [chainsaw] = await ethers.getSigners();            
       const AuctionHouse = await ethers.getContractFactory("AuctionHouse");
-      const auctionHouse = await AuctionHouse.deploy(weth.address);
-
+      const auctionHouse = await AuctionHouse.deploy(weth.address, []);      
       expect(formatUnits(await auctionHouse.timeBuffer(), 0)).to.eq(
         "900.0",
         "time buffer should equal 900"
@@ -70,32 +74,109 @@ describe("AuctionHouse", () => {
         5,
         "minBidIncrementPercentage should equal 5%"
       );
+      expect(await auctionHouse.hasRole(ADMIN_ROLE, await chainsaw.getAddress())).to.eq(
+        true,
+        "admin role should be assigned to chainsaw"
+      );
+    });    
+  });
+
+  describe("#constructor", () => {
+    it("should be able to deploy with auctioneers", async () => {
+      const [chainsaw, auctioneer1, auctioneer2] = await ethers.getSigners();            
+      const AuctionHouse = await ethers.getContractFactory("AuctionHouse");
+      const auctionHouse = await AuctionHouse.deploy(
+        weth.address, 
+        [await auctioneer1.getAddress(), await auctioneer2.getAddress()]
+      );
+      
+      expect(formatUnits(await auctionHouse.timeBuffer(), 0)).to.eq(
+        "900.0",
+        "time buffer should equal 900"
+      );
+      expect(await auctionHouse.minBidIncrementPercentage()).to.eq(
+        5,
+        "minBidIncrementPercentage should equal 5%"
+      );
+      expect(await auctionHouse.hasRole(ADMIN_ROLE, await chainsaw.getAddress())).to.eq(
+        true,
+        "admin role should be assigned to chainsaw"
+      );
+      expect(await auctionHouse.hasRole(AUCTIONEER_ROLE, await auctioneer1.getAddress())).to.eq(
+        true,
+        "auctioneer role should be assigned to auctioneer1"
+      );
+      expect(await auctionHouse.hasRole(AUCTIONEER_ROLE, await auctioneer2.getAddress())).to.eq(
+        true,
+        "auctioneer role should be assigned to auctioneer2"
+      );
+      
     });    
   });
 
   describe("#createAuction", () => {
     let auctionHouse: AuctionHouse;
     beforeEach(async () => {      
-      auctionHouse = await deploy();      
+      auctionHouse = await deploy();         
     });
 
-    it("should revert if the caller is not approved", async () => {      
+    it("should revert if the token ID does not exist", async () => {
+      const tokenId = 999;
       const duration = 60 * 60 * 24;
-      const reservePrice = BigNumber.from(10).pow(18).div(2);
-      const [_, __, ___, ____, unapproved] = await ethers.getSigners();            
+      const reservePrice = BigNumber.from(10).pow(18).div(2);            
+
+      await expect(
+        auctionHouse.createAuction(
+          tokenId,
+          testERC721.address,
+          duration,
+          reservePrice,            
+          wethAddr
+        )
+      ).eventually.rejectedWith(
+        revert`ERC721: owner query for nonexistent token`
+      );
+    });
+
+    it("should revert if the caller is not token owner", async () => {      
+      const duration = 60 * 60 * 24;
+      const reservePrice = BigNumber.from(10).pow(18).div(2);               
+      const [chainsaw, tokenOwner] = await ethers.getSigners();   
+      await mintFor(tokenOwner);
 
       await expect(
         auctionHouse
-          .connect(unapproved)
+          .connect(chainsaw)
           .createAuction(
             0,
             testERC721.address,
             duration,
             reservePrice,                        
-            "0x0000000000000000000000000000000000000000"
+            wethAddr
           )
       ).eventually.rejectedWith(
-        revert`Caller must be designated auctioneer`
+        revert`Must be owner of token to create an auction for it`
+      );
+    });
+
+    it("should revert if token contract / owner is not whitelisted", async () => {      
+      const duration = 60 * 60 * 24;
+      const reservePrice = BigNumber.from(10).pow(18).div(2);               
+      const [_, tokenOwner] = await ethers.getSigners();   
+      await mintFor(tokenOwner);
+
+      await expect(
+        auctionHouse
+          .connect(tokenOwner)
+          .createAuction(
+            0,
+            testERC721.address,
+            duration,
+            reservePrice,                        
+            wethAddr
+          )
+      ).eventually.rejectedWith(
+        revert`Call must be made by authorized seller, token contract or auctioneer`
       );
     });
 
@@ -110,41 +191,18 @@ describe("AuctionHouse", () => {
             badERC721.address,
             duration,
             reservePrice,          
-            "0x0000000000000000000000000000000000000000"
+            wethAddr
           )
         ).eventually.rejectedWith(
           revert`tokenContract does not support ERC721 interface`
         );
       });
 
-    it("should revert if the token ID does not exist", async () => {
-      const tokenId = 999;
-      const duration = 60 * 60 * 24;
-      const reservePrice = BigNumber.from(10).pow(18).div(2);      
-      const [admin] = await ethers.getSigners();
-
-      await expect(
-        auctionHouse
-          .connect(admin)
-          .createAuction(
-            tokenId,
-            testERC721.address,
-            duration,
-            reservePrice,            
-            "0x0000000000000000000000000000000000000000"
-          )
-      ).eventually.rejectedWith(
-        revert`ERC721: owner query for nonexistent token`
-      );
-    });
-
-    it("should allow admin to create auction", async () => {
-      const [admin] = await ethers.getSigners();
-      await testERC721.mint(await admin.getAddress(), 0);
+    it("should allow admin role to create auction for owned token", async () => {
+      const [chainsaw] = await ethers.getSigners();
+      await mintFor(chainsaw);
       await testERC721.setApprovalForAll(auctionHouse.address, true);
-      const owner = await testERC721.ownerOf(0);
-
-      await createAuction(auctionHouse.connect(admin));
+      await createAuction(auctionHouse.connect(chainsaw));
     
       const createdAuction = await auctionHouse.auctions(0);
 
@@ -152,20 +210,16 @@ describe("AuctionHouse", () => {
       expect(createdAuction.reservePrice).to.eq(
         BigNumber.from(10).pow(18).div(2)
       );      
-      expect(createdAuction.tokenOwner).to.eq(owner);            
+      expect(createdAuction.tokenOwner).to.eq(await chainsaw.getAddress());            
     });
 
-    it("should allow auctioneer to create auction", async () => {
-      const [admin, auctioneer] = await ethers.getSigners();
-      await testERC721.mint(await admin.getAddress(), 0);
-      await testERC721.setApprovalForAll(auctionHouse.address, true);
-      const owner = await testERC721.ownerOf(0);
-
-      await auctionHouse.grantRole(
-        await auctionHouse.AUCTIONEER(), 
-        await auctioneer.getAddress()
-      );
-
+    it("should allow auctioneer role to create auction for owned token", async () => {
+      const [chainsaw, auctioneer] = await ethers.getSigners();
+      await mintFor(auctioneer);
+      await auctionHouse.addAuctioneer(await auctioneer.getAddress());
+      await testERC721
+        .connect(auctioneer)
+        .setApprovalForAll(auctionHouse.address, true);      
       await createAuction(auctionHouse.connect(auctioneer));
     
       const createdAuction = await auctionHouse.auctions(0);
@@ -174,7 +228,123 @@ describe("AuctionHouse", () => {
       expect(createdAuction.reservePrice).to.eq(
         BigNumber.from(10).pow(18).div(2)
       );      
-      expect(createdAuction.tokenOwner).to.eq(owner);            
+      expect(createdAuction.tokenOwner).to.eq(await auctioneer.getAddress());            
+    });
+
+    it("should revert for non-whitelisted owned token", async () => {
+      const duration = 60 * 60 * 24;
+      const reservePrice = BigNumber.from(10).pow(18).div(2);     
+      const [chainsaw, tokenOwner] = await ethers.getSigners();
+      await auctionHouse.setPublicAuctionsEnabled(true);
+      await mintFor(tokenOwner);
+      
+      await testERC721
+        .connect(tokenOwner)
+        .setApprovalForAll(auctionHouse.address, true); 
+      
+      await expect(
+        auctionHouse          
+          .connect(tokenOwner)
+          .createAuction(
+            0,
+            testERC721.address,
+            duration,
+            reservePrice,          
+            wethAddr
+          )
+        ).eventually.rejectedWith(
+          revert`Call must be made by authorized seller, token contract or auctioneer`
+        );
+    });
+
+    it("should revert for whitelisted seller when public auctions disabled", async () => {
+      const duration = 60 * 60 * 24;
+      const reservePrice = BigNumber.from(10).pow(18).div(2);     
+      const [_, tokenOwner] = await ethers.getSigners();
+      await auctionHouse.whitelistAccount(await tokenOwner.getAddress());      
+      await mintFor(tokenOwner);
+      
+      await testERC721
+        .connect(tokenOwner)
+        .setApprovalForAll(auctionHouse.address, true); 
+      
+      await expect(
+        auctionHouse          
+          .connect(tokenOwner)
+          .createAuction(
+            0,
+            testERC721.address,
+            duration,
+            reservePrice,          
+            wethAddr
+          )
+        ).eventually.rejectedWith(
+          revert`Call must be made by authorized seller, token contract or auctioneer`
+        );
+    });
+
+    it("should revert for whitelisted token when public auctions disabled", async () => {
+      const duration = 60 * 60 * 24;
+      const reservePrice = BigNumber.from(10).pow(18).div(2);     
+      const [_, tokenOwner] = await ethers.getSigners();
+      await auctionHouse.whitelistAccount(testERC721.address);      
+      await mintFor(tokenOwner);
+      
+      await testERC721
+        .connect(tokenOwner)
+        .setApprovalForAll(auctionHouse.address, true); 
+      
+      await expect(
+        auctionHouse          
+          .connect(tokenOwner)
+          .createAuction(
+            0,
+            testERC721.address,
+            duration,
+            reservePrice,          
+            wethAddr
+          )
+        ).eventually.rejectedWith(
+          revert`Call must be made by authorized seller, token contract or auctioneer`
+        );
+    });
+
+    it("should allow whitelisted seller to auction token", async () => {
+      const [_, tokenOwner] = await ethers.getSigners();
+      await mintFor(tokenOwner);
+      await auctionHouse.whitelistAccount(await tokenOwner.getAddress());
+      await auctionHouse.setPublicAuctionsEnabled(true);
+      await testERC721
+        .connect(tokenOwner)
+        .setApprovalForAll(auctionHouse.address, true);      
+      await createAuction(auctionHouse.connect(tokenOwner));
+    
+      const createdAuction = await auctionHouse.auctions(0);
+
+      expect(createdAuction.duration).to.eq(24 * 60 * 60);
+      expect(createdAuction.reservePrice).to.eq(
+        BigNumber.from(10).pow(18).div(2)
+      );      
+      expect(createdAuction.tokenOwner).to.eq(await tokenOwner.getAddress());            
+    });
+
+    it("should allow seller to auction whitelisted token", async () => {
+      const [_, tokenOwner] = await ethers.getSigners();
+      await mintFor(tokenOwner);
+      await auctionHouse.whitelistAccount(testERC721.address);
+      await auctionHouse.setPublicAuctionsEnabled(true);
+      await testERC721
+        .connect(tokenOwner)
+        .setApprovalForAll(auctionHouse.address, true);      
+      await createAuction(auctionHouse.connect(tokenOwner));
+    
+      const createdAuction = await auctionHouse.auctions(0);
+
+      expect(createdAuction.duration).to.eq(24 * 60 * 60);
+      expect(createdAuction.reservePrice).to.eq(
+        BigNumber.from(10).pow(18).div(2)
+      );      
+      expect(createdAuction.tokenOwner).to.eq(await tokenOwner.getAddress());            
     });
 
     it("should emit an AuctionCreated event", async () => {
@@ -211,23 +381,21 @@ describe("AuctionHouse", () => {
     });
   });
 
+  // TODO - tests for setRoyalty
+
   describe("#setAuctionReservePrice", () => {
     let auctionHouse: AuctionHouse;
-    let admin: Signer;    
-    let auctioneer: Signer;
-    let tokenOwner: Signer;
-    let bidder: Signer;
+    let chainsaw: Signer; 
+    let auctioneer: Signer;   
 
     beforeEach(async () => {
-      [admin, auctioneer, tokenOwner, bidder] = await ethers.getSigners();
-      auctionHouse = (await deploy()) as AuctionHouse;      
-      await testERC721.mint(await tokenOwner.getAddress(), 0);
-      await testERC721.connect(tokenOwner).setApprovalForAll(auctionHouse.address, true);
-      await createAuction(auctionHouse.connect(admin));      
-      await auctionHouse.grantRole(
-        await auctionHouse.AUCTIONEER(), 
-        await auctioneer.getAddress()
-      );
+      [chainsaw, auctioneer] = await ethers.getSigners();
+      auctionHouse = (await deploy()) as AuctionHouse;            
+      await mintFor(chainsaw);
+      await testERC721
+        .connect(chainsaw)
+        .setApprovalForAll(auctionHouse.address, true);
+      await createAuction(auctionHouse);            
     });
 
     it("should revert if the auctionHouse does not exist", async () => {
@@ -235,41 +403,28 @@ describe("AuctionHouse", () => {
         auctionHouse.setAuctionReservePrice(1, TWO_ETH)
       ).eventually.rejectedWith(revert`Auction doesn't exist`);
     });
-
-    it("should revert if not called by admin or auctioneer", async () => {
-      await expect(
-        auctionHouse.connect(bidder).setAuctionReservePrice(0, TWO_ETH)
-      ).eventually.rejectedWith(revert`Caller must be designated auctioneer`);
-    });
-
+    
     it("should revert if the auction has already started", async () => {
       await auctionHouse.setAuctionReservePrice(0, TWO_ETH);      
-      await auctionHouse
-        .connect(bidder)
+      await auctionHouse        
         .createBid(0, TWO_ETH, { value: TWO_ETH });
       await expect(
         auctionHouse.setAuctionReservePrice(0, ONE_ETH)
       ).eventually.rejectedWith(revert`Auction has already started`);
     });
 
-    it("should set the auction reserve price when called by admin", async () => {
+    it("should set the auction reserve price when called by admin", async () => {      
       await auctionHouse.setAuctionReservePrice(0, TWO_ETH);
 
       expect((await auctionHouse.auctions(0)).reservePrice).to.eq(TWO_ETH);
     });
 
     it("should set the auction reserve price when called by auctioneer", async () => {
+      await auctionHouse.addAuctioneer(await auctioneer.getAddress());
       await auctionHouse.connect(auctioneer).setAuctionReservePrice(0, TWO_ETH);
 
       expect((await auctionHouse.auctions(0)).reservePrice).to.eq(TWO_ETH);
     });
-
-    // TODO - Add in support for secondary market
-    // it("should set the auction reserve price when called by the token owner", async () => {
-    //   await auctionHouse.connect(tokenOwner).setAuctionReservePrice(0, TWO_ETH);
-
-    //   expect((await auctionHouse.auctions(0)).reservePrice).to.eq(TWO_ETH);
-    // });
 
     it("should emit an AuctionReservePriceUpdated event", async () => {
       const block = await ethers.provider.getBlockNumber();
@@ -287,35 +442,33 @@ describe("AuctionHouse", () => {
   
   describe("#createBid", () => {
     let auctionHouse: AuctionHouse;
-    let admin: Signer;
-    let tokenOwner: Signer;
+    let chainsaw: Signer;    
     let bidderA: Signer;
     let bidderB: Signer;
 
     beforeEach(async () => {
-      [admin, tokenOwner, bidderA, bidderB] = await ethers.getSigners();
-      auctionHouse = (await (await deploy()).connect(bidderA)) as AuctionHouse;
-      await testERC721.mint(await tokenOwner.getAddress(), 0);
-      await testERC721.connect(tokenOwner).setApprovalForAll(auctionHouse.address, true);
-      
-      await createAuction(auctionHouse.connect(admin));      
+      [chainsaw, bidderA, bidderB] = await ethers.getSigners();
+      auctionHouse = (await (await deploy())) as AuctionHouse;
+      await mintFor(chainsaw)
+      await testERC721.setApprovalForAll(auctionHouse.address, true);
+      await createAuction(auctionHouse);      
     });
 
     it("should revert if the specified auction does not exist", async () => {
       await expect(
-        auctionHouse.createBid(11111, ONE_ETH)
+        auctionHouse.connect(bidderA).createBid(11111, ONE_ETH)
       ).eventually.rejectedWith(revert`Auction doesn't exist`);
     });
 
     it("should revert if the bid is less than the reserve price", async () => {
       await expect(
-        auctionHouse.createBid(0, 0, { value: 0 })
+        auctionHouse.connect(bidderA).createBid(0, 0, { value: 0 })
       ).eventually.rejectedWith(revert`Must send at least reservePrice`);
     });
     
     it("should revert if msg.value does not equal specified amount", async () => {
       await expect(
-        auctionHouse.createBid(0, ONE_ETH, {
+        auctionHouse.connect(bidderA).createBid(0, ONE_ETH, {
           value: ONE_ETH.mul(2),
         })
       ).eventually.rejectedWith(
@@ -328,14 +481,14 @@ describe("AuctionHouse", () => {
       it("should set the first bid time", async () => {
         // TODO: Fix this test on Sun Oct 04 2274
         await ethers.provider.send("evm_setNextBlockTimestamp", [9617249934]);
-        await auctionHouse.createBid(0, ONE_ETH, {
+        await auctionHouse.connect(bidderA).createBid(0, ONE_ETH, {
           value: ONE_ETH,
         });
         expect((await auctionHouse.auctions(0)).firstBidTime).to.eq(9617249934);
       });
 
       it("should store the transferred ETH as WETH", async () => {
-        await auctionHouse.createBid(0, ONE_ETH, {
+        await auctionHouse.connect(bidderA).createBid(0, ONE_ETH, {
           value: ONE_ETH,
         });
         expect(await weth.balanceOf(auctionHouse.address)).to.eq(ONE_ETH);
@@ -343,7 +496,7 @@ describe("AuctionHouse", () => {
 
       it("should not update the auction's duration", async () => {
         const beforeDuration = (await auctionHouse.auctions(0)).duration;
-        await auctionHouse.createBid(0, ONE_ETH, {
+        await auctionHouse.connect(bidderA).createBid(0, ONE_ETH, {
           value: ONE_ETH,
         });
         const afterDuration = (await auctionHouse.auctions(0)).duration;
@@ -352,7 +505,7 @@ describe("AuctionHouse", () => {
       });
 
       it("should store the bidder's information", async () => {
-        await auctionHouse.createBid(0, ONE_ETH, {
+        await auctionHouse.connect(bidderA).createBid(0, ONE_ETH, {
           value: ONE_ETH,
         });
         const currAuction = await auctionHouse.auctions(0);
@@ -363,7 +516,7 @@ describe("AuctionHouse", () => {
 
       it("should emit an AuctionBid event", async () => {
         const block = await ethers.provider.getBlockNumber();
-        await auctionHouse.createBid(0, ONE_ETH, {
+        await auctionHouse.connect(bidderA).createBid(0, ONE_ETH, {
           value: ONE_ETH,
         });
         const events = await auctionHouse.queryFilter(
@@ -401,7 +554,7 @@ describe("AuctionHouse", () => {
 
       it("should revert if the bid is smaller than the last bid + minBid", async () => {
         await expect(
-          auctionHouse.createBid(0, ONE_ETH.add(1), {
+          auctionHouse.connect(bidderB).createBid(0, ONE_ETH.add(1), {
             value: ONE_ETH.add(1),
           })
         ).eventually.rejectedWith(
@@ -414,7 +567,7 @@ describe("AuctionHouse", () => {
           await bidderA.getAddress()
         );
         const beforeBidAmount = (await auctionHouse.auctions(0)).amount;
-        await auctionHouse.createBid(0, TWO_ETH, {
+        await auctionHouse.connect(bidderB).createBid(0, TWO_ETH, {
           value: TWO_ETH,
         });
         const afterBalance = await ethers.provider.getBalance(
@@ -426,7 +579,7 @@ describe("AuctionHouse", () => {
 
       it("should not update the firstBidTime", async () => {
         const firstBidTime = (await auctionHouse.auctions(0)).firstBidTime;
-        await auctionHouse.createBid(0, TWO_ETH, {
+        await auctionHouse.connect(bidderB).createBid(0, TWO_ETH, {
           value: TWO_ETH,
         });
         expect((await auctionHouse.auctions(0)).firstBidTime).to.eq(
@@ -435,7 +588,7 @@ describe("AuctionHouse", () => {
       });
 
       it("should transfer the bid to the contract and store it as WETH", async () => {
-        await auctionHouse.createBid(0, TWO_ETH, {
+        await auctionHouse.connect(bidderB).createBid(0, TWO_ETH, {
           value: TWO_ETH,
         });
 
@@ -443,7 +596,7 @@ describe("AuctionHouse", () => {
       });
 
       it("should update the stored bid information", async () => {
-        await auctionHouse.createBid(0, TWO_ETH, {
+        await auctionHouse.connect(bidderB).createBid(0, TWO_ETH, {
           value: TWO_ETH,
         });
 
@@ -455,7 +608,7 @@ describe("AuctionHouse", () => {
 
       it("should not extend the duration of the bid if outside of the time buffer", async () => {
         const beforeDuration = (await auctionHouse.auctions(0)).duration;
-        await auctionHouse.createBid(0, TWO_ETH, {
+        await auctionHouse.connect(bidderB).createBid(0, TWO_ETH, {
           value: TWO_ETH,
         });
         const afterDuration = (await auctionHouse.auctions(0)).duration;
@@ -464,7 +617,7 @@ describe("AuctionHouse", () => {
 
       it("should emit an AuctionBid event", async () => {
         const block = await ethers.provider.getBlockNumber();
-        await auctionHouse.createBid(0, TWO_ETH, {
+        await auctionHouse.connect(bidderB).createBid(0, TWO_ETH, {
           value: TWO_ETH,
         });
         const events = await auctionHouse.queryFilter(
@@ -561,21 +714,20 @@ describe("AuctionHouse", () => {
 
   describe("#cancelAuction", () => {
     let auctionHouse: AuctionHouse;
-    let admin: Signer;
-    let auctioneer: Signer;
-    let tokenOwner: Signer;    
+    let chainsaw: Signer;
+    let auctioneer: Signer;    
     let bidder: Signer;
 
     beforeEach(async () => {
-      [admin, auctioneer, tokenOwner, bidder] = await ethers.getSigners();
+      [chainsaw, auctioneer, bidder] = await ethers.getSigners();
       auctionHouse = (await (await deploy())) as AuctionHouse;
-      await testERC721.mint(await tokenOwner.getAddress(), 0);
-      await testERC721.connect(tokenOwner).setApprovalForAll(auctionHouse.address, true);
+      await mintFor(chainsaw);
+      await testERC721.setApprovalForAll(auctionHouse.address, true);
       await auctionHouse.grantRole(
         await auctionHouse.AUCTIONEER(), 
         await auctioneer.getAddress()
       );
-      await createAuction(auctionHouse.connect(admin));
+      await createAuction(auctionHouse);
     });
 
     it("should revert if the auction does not exist", async () => {
@@ -588,13 +740,12 @@ describe("AuctionHouse", () => {
       await expect(
         auctionHouse.connect(bidder).cancelAuction(0)
       ).eventually.rejectedWith(
-        `Caller must be designated auctioneer`
+        revert`Call must be made by authorized auctioneer`
       );
     });
 
     it("should revert if the auction has already begun", async () => {
-      await auctionHouse
-        .connect(bidder)
+      await auctionHouse        
         .createBid(0, ONE_ETH, { value: ONE_ETH });
       await expect(auctionHouse.cancelAuction(0)).eventually.rejectedWith(
         revert`Can't cancel an auction once it's begun`
@@ -602,7 +753,7 @@ describe("AuctionHouse", () => {
     });
 
     it("should be callable by the admin", async () => {
-      await auctionHouse.connect(admin).cancelAuction(0);
+      await auctionHouse.cancelAuction(0);
 
       const auctionResult = await auctionHouse.auctions(0);
 
@@ -614,7 +765,7 @@ describe("AuctionHouse", () => {
       expect(auctionResult.bidder).to.eq(ethers.constants.AddressZero);      
       expect(auctionResult.auctionCurrency).to.eq(ethers.constants.AddressZero);
 
-      expect(await testERC721.ownerOf(0)).to.eq(await tokenOwner.getAddress());
+      expect(await testERC721.ownerOf(0)).to.eq(await chainsaw.getAddress());
     });
 
     it("should be callable by the auctioneer", async () => {
@@ -629,7 +780,7 @@ describe("AuctionHouse", () => {
       expect(auctionResult.tokenOwner).to.eq(ethers.constants.AddressZero);
       expect(auctionResult.bidder).to.eq(ethers.constants.AddressZero);      
       expect(auctionResult.auctionCurrency).to.eq(ethers.constants.AddressZero);
-      expect(await testERC721.ownerOf(0)).to.eq(await tokenOwner.getAddress());
+      expect(await testERC721.ownerOf(0)).to.eq(await chainsaw.getAddress());
     });
 
     it("should emit an AuctionCanceled event", async () => {
@@ -643,7 +794,7 @@ describe("AuctionHouse", () => {
       const logDescription = auctionHouse.interface.parseLog(events[0]);
 
       expect(logDescription.args.tokenId.toNumber()).to.eq(0);
-      expect(logDescription.args.tokenOwner).to.eq(await tokenOwner.getAddress());
+      expect(logDescription.args.tokenOwner).to.eq(await chainsaw.getAddress());
       expect(logDescription.args.tokenContract).to.eq(testERC721.address);
     });
   });
@@ -651,19 +802,22 @@ describe("AuctionHouse", () => {
 
   describe("#endAuction", () => {
     let auctionHouse: AuctionHouse;
-    let admin: Signer;
-    let auctioneer: Signer;
-    let tokenOwner: Signer;
+    let chainsaw: Signer;
+    let tokenOwner: Signer;    
     let bidder: Signer;    
     let badBidder: BadBidder;
 
     beforeEach(async () => {
-      [admin, auctioneer, tokenOwner, bidder] = await ethers.getSigners();
+      [chainsaw, tokenOwner, bidder] = await ethers.getSigners();
 
       auctionHouse = (await (await deploy())) as AuctionHouse;
-      await testERC721.mint(await tokenOwner.getAddress(), 0);
-      await testERC721.connect(tokenOwner).setApprovalForAll(auctionHouse.address, true);      
-      await createAuction(auctionHouse.connect(admin));
+      await mintFor(tokenOwner);
+      await testERC721
+        .connect(tokenOwner)
+        .setApprovalForAll(auctionHouse.address, true);
+      await auctionHouse.whitelistAccount(await tokenOwner.getAddress());
+      await auctionHouse.setPublicAuctionsEnabled(true);
+      await createAuction(auctionHouse.connect(tokenOwner));
       badBidder = await deployBidder(auctionHouse.address, testERC721.address);
     });
 
@@ -680,7 +834,7 @@ describe("AuctionHouse", () => {
     });
 
     it("should revert if the auction has not completed", async () => {
-      await auctionHouse.createBid(0, ONE_ETH, {
+      await auctionHouse.connect(bidder).createBid(0, ONE_ETH, {
         value: ONE_ETH,
       });
 
@@ -724,14 +878,14 @@ describe("AuctionHouse", () => {
       it("should pay the token owner the remainder of the winning bid", async () => {
         const beforeBalance = await ethers.provider.getBalance(
           await tokenOwner.getAddress()
-        );
+        );        
         await auctionHouse.endAuction(0);
         const expectedProfit = "1000000000000000000";
         const tokenOwnerBalance = await ethers.provider.getBalance(
           await tokenOwner.getAddress()
         );        
         const wethBalance = await weth.balanceOf(await tokenOwner.getAddress());
-        const wethBalanceOfBidder = await weth.balanceOf(await bidder.getAddress());
+        
         
         await expect(
           tokenOwnerBalance.sub(beforeBalance).add(wethBalance).toString()

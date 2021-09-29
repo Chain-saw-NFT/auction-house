@@ -149,20 +149,18 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl, Ownable 
         return auctionId;
     }
 
+    // TODO - Allow all token owners to adjust?
     /**
      * @notice sets auction reserve price if auction has not already started     
      */
     function setAuctionReservePrice(uint256 auctionId, uint256 reservePrice) 
         external 
         override 
-        auctionExists(auctionId)    
+        auctionExists(auctionId) 
+        onlyAuctioneer   
     {       
-        require(auctions[auctionId].firstBidTime == 0, "Auction has already started");
-        require(
-            _isAuthorizedAction(auctions[auctionId].tokenOwner, auctions[auctionId].tokenContract), 
-            "Call must be made by authorized seller, token contract or auctioneer"
-        );
-
+        require(auctions[auctionId].firstBidTime == 0, "Auction has already started");        
+        
         auctions[auctionId].reservePrice = reservePrice;
 
         emit AuctionReservePriceUpdated(auctionId, auctions[auctionId].tokenId, auctions[auctionId].tokenContract, reservePrice);
@@ -336,7 +334,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl, Ownable 
         
         delete auctions[auctionId];
     }
-
+    
     /**
      * @notice Cancel an auction.
      * @dev Transfers the NFT back to the auction creator and emits an AuctionCanceled event
@@ -360,6 +358,10 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl, Ownable 
      */
     function whitelistAccount(address sellerOrTokenContract) external onlyAuctioneer {
         _whitelistAccount(sellerOrTokenContract);
+    }
+
+    function setPublicAuctionsEnabled(bool status) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        publicAuctionsEnabled = status;
     }
     
     // # auction helpers #
@@ -421,7 +423,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl, Ownable 
     }
 
     function _isAuthorizedAction(address seller, address tokenContract) internal view returns(bool) {
-        if (hasRole(AUCTIONEER, seller)) {
+        if (hasRole(DEFAULT_ADMIN_ROLE, seller) || hasRole(AUCTIONEER, seller)) {
             return true;
         }
 
