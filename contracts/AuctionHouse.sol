@@ -19,6 +19,7 @@ import { SafeMath } from "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IAuctionHouse } from "./interfaces/IAuctionHouse.sol";
 import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import "hardhat/console.sol";
 
 interface IWETH {
@@ -30,7 +31,7 @@ interface IWETH {
 /**
  * @title The Chain/Saw AuctionHouse
  */
-contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {  
+contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl, Ownable {  
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
     using Counters for Counters.Counter;
@@ -47,14 +48,22 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {
     // A mapping of all of the auctions currently running.
     mapping(uint256 => IAuctionHouse.Auction) public auctions;
 
-    // A mapping of token contracts to royalty objects
+    // A mapping of token contracts to royalty objects.
     mapping(address => IAuctionHouse.Royalty) public royaltyRegistry;
+
+    // A mapping of all token contract addresses that ChainSaw allows on auction-house. These addresses
+    // could belong to token contracts or individual sellers.
+    mapping(address => bool) public whitelistedAccounts;
 
     // 721 interface id
     bytes4 constant interfaceId = 0x80ac58cd; 
     
     // Counter for incrementing auctionId
     Counters.Counter private _auctionIdTracker;
+
+    // Tracks whether auction house is allowing non-owners to create auctions,
+    // e.g. in the case of secondary sales.
+    bool public publicAuctionsEnabled;
     
     // The role that has permissions to create and cancel auctions
     bytes32 public constant AUCTIONEER = keccak256("AUCTIONEER");
@@ -67,25 +76,27 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {
         _;
     }
 
-    modifier onlyFirstAuction(address tokenContract) {
-        require(royaltyRegistry[tokenContract].beneficiary == payable(0), "Royalty has already been set");
-        _; 
-    }
-
+    /**
+     * @notice Require that caller is authorized auctioneer
+     */
     modifier onlyAuctioneer() {
-        require(hasRole(AUCTIONEER, msg.sender), "Caller must be designated auctioneer");
+        require(
+            hasRole(AUCTIONEER, msg.sender) || hasRole(DEFAULT_ADMIN_ROLE, msg.sender),
+            "Call must be made by authorized auctioneer"
+        );
         _;
     }
-
+    
     /*
      * Constructor
      */
-    constructor(address _weth) {
+    constructor(address _weth, address[] memory auctioneers) {
         wethAddress = _weth;
         timeBuffer = 15 * 60; // extend 15 minutes after every bid made in last 15 minutes
         minBidIncrementPercentage = 5; // 5%
-        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _setupRole(AUCTIONEER, msg.sender);
+        publicAuctionsEnabled = false;
+        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);        
+        _addAuctioneers(auctioneers);        
     }
 
     /**
@@ -98,18 +109,23 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {
         uint256 duration,
         uint256 reservePrice,                
         address auctionCurrency
-    ) 
-        public 
-        override 
-        nonReentrant 
-        onlyAuctioneer
-        returns (uint256) 
-    {        
+    ) public  override nonReentrant returns (uint256) {        
         require(
             IERC165(tokenContract).supportsInterface(interfaceId),
             "tokenContract does not support ERC721 interface"
-        );        
+        );  
+        
         address tokenOwner = IERC721(tokenContract).ownerOf(tokenId);
+        require(
+          tokenOwner == msg.sender,
+          "Must be owner of token to create an auction for it"
+        );
+
+        require(
+            _isAuthorizedAction(tokenOwner, tokenContract),
+            "Call must be made by authorized seller, token contract or auctioneer"
+        );
+    
         uint256 auctionId = _auctionIdTracker.current();
 
         auctions[auctionId] = Auction({
@@ -133,14 +149,18 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {
         return auctionId;
     }
 
+    // TODO - Allow all token owners to adjust?
+    /**
+     * @notice sets auction reserve price if auction has not already started     
+     */
     function setAuctionReservePrice(uint256 auctionId, uint256 reservePrice) 
         external 
         override 
         auctionExists(auctionId) 
-        onlyAuctioneer
-    {        
-        require(auctions[auctionId].firstBidTime == 0, "Auction has already started");
-
+        onlyAuctioneer   
+    {       
+        require(auctions[auctionId].firstBidTime == 0, "Auction has already started");        
+        
         auctions[auctionId].reservePrice = reservePrice;
 
         emit AuctionReservePriceUpdated(auctionId, auctions[auctionId].tokenId, auctions[auctionId].tokenContract, reservePrice);
@@ -154,8 +174,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {
     function setRoyalty(address tokenContract, address payable beneficiary, uint royaltyPercentage) 
         external 
         override 
-        onlyAuctioneer   
-        onlyFirstAuction(tokenContract)     
+        onlyAuctioneer                 
     {                
         royaltyRegistry[tokenContract] = Royalty({
             beneficiary: beneficiary,
@@ -163,7 +182,6 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {
         });
         emit RoyaltySet(tokenContract, beneficiary, royaltyPercentage);
     }
-
 
     /**
      * @notice Create a bid on a token, with a given amount.
@@ -316,7 +334,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {
         
         delete auctions[auctionId];
     }
-
+    
     /**
      * @notice Cancel an auction.
      * @dev Transfers the NFT back to the auction creator and emits an AuctionCanceled event
@@ -335,6 +353,18 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {
         _cancelAuction(auctionId);
     }
 
+    /**
+      * @notice add account representing token owner (seller) or token contract to the whitelist
+     */
+    function whitelistAccount(address sellerOrTokenContract) external onlyAuctioneer {
+        _whitelistAccount(sellerOrTokenContract);
+    }
+
+    function setPublicAuctionsEnabled(bool status) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        publicAuctionsEnabled = status;
+    }
+    
+    // # auction helpers #
     /**
      * @dev Given an amount and a currency, transfer the currency to this contract.
      * If the currency is ETH (0x0), attempt to wrap the amount as WETH
@@ -390,6 +420,56 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl {
 
     function _exists(uint256 auctionId) internal view returns(bool) {
         return auctions[auctionId].tokenOwner != address(0);
+    }
+
+    function _isAuthorizedAction(address seller, address tokenContract) internal view returns(bool) {
+        if (hasRole(DEFAULT_ADMIN_ROLE, seller) || hasRole(AUCTIONEER, seller)) {
+            return true;
+        }
+
+        if (publicAuctionsEnabled) {
+            return _isWhitelisted(seller, tokenContract);
+        }
+
+        return false;
+    }
+
+    function addAuctioneer(address who) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _addAuctioneer(who);
+    }
+    
+    // # Helpers for managing auctioneers #
+    function _addAuctioneers(address[] memory auctioneers) internal {
+        for (uint i = 0; i < auctioneers.length && i < 10; i++) {
+            _addAuctioneer(auctioneers[i]);
+        }
+    }
+
+    function _addAuctioneer(address who) internal {        
+        _setupRole(AUCTIONEER, who);
+    }
+
+    function _removeAuctioneer(address who) internal {
+        revokeRole(AUCTIONEER, who);
+    }
+
+    // # Helpers for managing whitelist #
+    function _isWhitelisted(address seller, address tokenContract) internal view returns(bool) {
+        return whitelistedAccounts[seller] || whitelistedAccounts[tokenContract];
+    }
+
+    function _whitelistAccounts(address[] memory auctioneers) internal {
+        for (uint i = 0; i < auctioneers.length; i++) {
+            _whitelistAccount(auctioneers[i]);
+        }
+    }
+
+    function _whitelistAccount(address sellerOrTokenContract) internal {        
+        whitelistedAccounts[sellerOrTokenContract] = true;
+    }
+
+    function _removeWhitelistedAccount(address sellerOrTokenContract) internal {
+        delete whitelistedAccounts[sellerOrTokenContract];
     }
 
     receive() external payable {}
