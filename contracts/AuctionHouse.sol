@@ -318,7 +318,11 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl, Ownable 
             return;
         }
 
-        if (royaltyRegistry[tokenContract].beneficiary != address(0) && royaltyRegistry[tokenContract].royaltyPercentage > 0){
+        if (
+            royaltyRegistry[tokenContract].beneficiary != address(0) && 
+            royaltyRegistry[tokenContract].beneficiary != auctions[auctionId].tokenOwner &&
+            royaltyRegistry[tokenContract].royaltyPercentage > 0
+        ){
             uint256 royaltyAmount = _generateRoyaltyAmount(auctionId, auctions[auctionId].tokenContract);
             uint256 amountRemaining = tokenOwnerProfit.sub(royaltyAmount);
             
