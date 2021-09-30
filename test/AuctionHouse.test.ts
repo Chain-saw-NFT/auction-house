@@ -155,7 +155,7 @@ describe("AuctionHouse", () => {
             wethAddr
           )
       ).eventually.rejectedWith(
-        revert`Must be owner of token to create an auction for it`
+        revert`Must be owner of NFT`
       );
     });
 
@@ -740,7 +740,7 @@ describe("AuctionHouse", () => {
       await expect(
         auctionHouse.connect(bidder).cancelAuction(0)
       ).eventually.rejectedWith(
-        revert`Call must be made by authorized auctioneer`
+        revert`Must be auctioneer or owner of NFT`
       );
     });
 

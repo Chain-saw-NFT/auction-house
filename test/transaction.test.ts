@@ -1,5 +1,4 @@
 // @ts-ignore
-
 import { ethers } from "hardhat";
 import chai, { expect } from "chai";
 import asPromised from "chai-as-promised";
@@ -22,7 +21,7 @@ const ONE_DAY = 24 * 60 * 60;
 // helper function so we can parse numbers and do approximate number calculations, to avoid annoying gas calculations
 const smallify = (bn: BigNumber) => bn.div(THOUSANDTH_ETH).toNumber();
 
-describe("integration", () => {  
+describe("transactions & payment", () => {  
   let weth: WETH;
   let auction: AuctionHouse;
   let genericNFT: TestERC721;
