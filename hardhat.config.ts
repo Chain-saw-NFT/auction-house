@@ -6,6 +6,9 @@ import "solidity-coverage";
 import "@nomiclabs/hardhat-etherscan";
 import "hardhat-gas-reporter"
 
+
+  
+
 /**
  * @type import('hardhat/config').HardhatUserConfig
  */
@@ -23,7 +26,8 @@ export default {
   
   gasReporter: {
     currency: 'USD',
-    gasPrice: 100
+    gasPrice: 100,
+    coinmarketcap: process.env.COINMARKETCAP_API_KEY,
   }
   
 };
