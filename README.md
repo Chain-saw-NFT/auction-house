@@ -1,57 +1,60 @@
-# Zora — Auction House 〜 𓀨 〜
+# Chain/Saw — Auction House
 
-![Auction House Header Image](./auction-house.png)
+The Chain/Saw Auction House enables permissioned reserve time auctions for NFTs. Accounts granted either the *administrative* or *auctioneer* roles are able to initiate an auction for any NFT that they own. These roles are intended to facilitate primary sales run by Chain/Saw on behalf of collaborating artist. To enable secondary sales, the auction house allows whitelisted accounts to initiate auctions for any NFTs and any user to initiate an auction for a whitelisted token contract.
 
-The Zora Auction House is an open and permissionless system that allows any creator, community, platform or DAO to create and run their own curated auction houses. 
+*Mainnet address:* `TBD`
 
-These auction houses run reserve timed auctions for NFTs, with special emphasis given to the role of curators. If an owner of an NFT chooses to list with a curator, that curator can charge a curator fee and has to approve any auction before it commences with that curators auction house. 
-
-Anyone is able to run an NFT auction on the protocol for free by simply not specifying a curator.
-
-The Zora ethos is to create public goods that are either owned by the community or by no one. As such, we have deployed this without admin functionality, and is therefore entirely permissionless and unstoppable.
-
-*Mainnet address:* `0xE468cE99444174Bd3bBBEd09209577d25D1ad673`
-
-*Rinkeby address:* `0xE7dd1252f50B3d845590Da0c5eADd985049a03ce`
+*Rinkeby address:* `TBD`
 
 ## Table of Contents
-- [Architecture](#architecture)
-  - [Curators](#curators)
-  - [Create Auction](#create-auction)
-  - [Cancel Auction](#cancel-auction)
-  - [Set Auction Approval](#set-auction-approval)
-  - [Create Bid](#create-bid)
-  - [End Auction](#end-auction)
-- [Local Development](#local-development)
-  - [Install Dependencies](#install-dependencies)
-  - [Compile Contracts](#compile-contracts)
-  - [Run Tests](#run-tests)
-- [Bug Bounty](#bug-bounty)
-- [Acknowledgements](#acknowledgements)
+- [Chain/Saw — Auction House](#chainsaw--auction-house)
+  - [Table of Contents](#table-of-contents)
+  - [Architecture](#architecture)
+  - [Whitelist](#whitelist)
+  - [Public Auction Toggle](#public-auction-toggle)
+  - [Roles](#roles)
+    - [Create Auction](#create-auction)
+    - [Cancel Auction](#cancel-auction)
+    - [Create Bid](#create-bid)
+    - [End Auction](#end-auction)
+  - [Local Development](#local-development)
+    - [Install Dependencies](#install-dependencies)
+    - [Compile Contracts](#compile-contracts)
+    - [Run Tests](#run-tests)
+    - [Deploy](#deploy)
 
 ## Architecture
-This protocol allows a holder of any NFT to create and perform
-a permissionless reserve auction. It also acknowledges the role of
-curators in auctions, and optionally allows the auction creator to 
-dedicate a portion of the winnings from the auction to a curator of their choice.
+This protocol allows *administrators* and *auctioneers* holding any NFT to create and perform
+a reserve auction. It also seeks to enable secondary sales by allowing any user to create an auction so long as either (a) the user account is whitelisted or (b) the account representing the underlying token contract of the NFT is whitelisted.
 
-Note that if a curator is specified, the curator decides when to start the auction. 
-Additionally, the curator is able to cancel an auction before it begins.
 
-### Curators
-In a metaverse of millions of NFTs, the act of curation is critical. Curators create and facilitate context and community which augment the value of NFTs that they select. The act of curation creates value for the NFT by contextualizing it and signalling its importance to a particular community. The act of curation is extremely valuable, and is directly recognized by the Auction House system. A curator who successfully auctions off an NFT for an owner can earn a share in the sale. 
+## Whitelist
+A whitelist has been added with the intention of allowing us to use this contract for any secondary markets we want to make available on the Chain/Saw (or any other) websites. Previously, only accounts granted the role of `admin` or `auctioneer` were able to create auctions. Now, any user can create an auction for an NFT that they own if either (a) their account has been whitelisted or (b) the account of the underlying token contract has been whitelisted.
 
-We have defined a *curator* role in the auction house. A curator can:
-- Approve and deny proposals for an NFT to be listed with them.
-- Earn a fee for their curation
-- Cancel an auction prior to bidding being commenced
+The idea here is that we don't want any old NFT to appear on the secondary marketplace, so the whitelist gives us the ability to lock it down to certain contracts. Additionally, an individual, owned account can also be whitelisted. 
 
-Creators and collectors can submit a proposal to list their NFTs with a curator onchain, which the curator must accept (or optionally reject). This creates an onchain record of a curators activity and value creation. 
+## Public Auction Toggle
+Added in a bool to track whether the above-mentioned whitelisting functionality is in effect. This will allow us to open up / close secondary markets when we see fit. Can't really remember the exact use case I had in mind when this was added so may not be necessary.
 
-Creators and collectors always have the option to run an auction themselves for free.
+## Roles
+There are two roles that are given permission access to various features:
+* `admin` 
+  * set in constructor to `msg.sender`
+  * has permissions to add / remove `auctioneers` and add / remove accounts from whitelist
+  * has permissions to start auction for any NFT that they own
+* `auctioneer`
+  * same permissions as admin, except for ability to add / remove other `auctioneers`
+  * this role will be granted to trusted staff to distribute administrative load
+
+Users that do not fall into one of these roles still have the ability to create auctions for NFTs that they own so long one of the following conditions is met:
+* their account is whitelisted
+* the account # representing the contract of the token they want to auction is whitelisted
+* public auctions are enabled
+
+---
 
 ### Create Auction
-At any time, the holder of a token can create an auction. When an auction is created,
+At any time, the holder of a token who meets conditions outlined above can create an auction. When an auction is created,
 the token is moved out of their wallet and held in escrow by the auction. The owner can 
 retrieve the token at any time, so long as the auction has not begun. 
 
@@ -60,31 +63,19 @@ retrieve the token at any time, so long as the auction has not begun.
 | `tokenId`              | `uint256`      | The tokenID to use in the auction                                                              |
 | `tokenContract`        | `address`      | The address of the nft contract the token is from                                              |
 | `duration`             | `uint256`      | The length of time, in seconds, that the auction should run for once the reserve price is hit. |
-| `reservePrice`         | `uint256`      | The minimum price for the first bid, starting the auction.                                     |
-| `creator`              | `address`      | The address of the current token holder, the creator of the auction                            |
-| `curator`              | `address`      | The address of the curator for this auction                                                    |
-| `curatorFeePercentage` | `uint8`        | The percentage of the winning bid to share with the curator                                    |
+| `reservePrice`         | `uint256`      | The minimum price for the first bid, starting the auction.                                     
 | `auctionCurrency`      | `address`      | The currency to perform this auction in, or 0x0 for ETH                                        |
 
 ### Cancel Auction
-If an auction has not started yet, the curator or the creator of the auction may cancel the auction, and remove it from the registry. 
+If an auction has not started yet, creator of the auction may cancel the auction, and remove it from the registry. 
 This action returns the token to the previous holder.
 
 | **Name**               | **Type**       | **Description**                                                                                |
 |------------------------|----------------|------------------------------------------------------------------------------------------------|
 | `auctionId`            | `uint256`      | The ID of the auction                                                                          |
 
-### Set Auction Approval
-If a created auction specifies a curator to start the auction, the curator _must_ approve it in order for it to start.
-This is to allow curators to specifically choose which auctions they are willing to curate and perform.
-
-| **Name**               | **Type**       | **Description**                                                                                |
-|------------------------|----------------|------------------------------------------------------------------------------------------------|
-| `auctionId`            | `uint256`      | The ID of the auction                                                                          |
-| `approved`             | `bool`         | The approval state to set on the auction                                                       |
-
 ### Create Bid
-If an auction is approved, anyone is able to bid. The first bid _must_ be greater than the reserve price. 
+Anyone is able to bid. The first bid _must_ be greater than the reserve price. 
 Once the first bid is successfully placed, other bidders may continue to place bids up until the auction's duration has passed.
 
 If a bid is placed in the final 15 minutes of the auction, the auction is extended for another 15 minutes. 
@@ -122,16 +113,23 @@ npx hardhat compile
 ```shell script
 npx hardhat test
 ```
+### Deploy
 
-## Bug Bounty
-- 25 ETH for any critical bugs that could result in loss of funds.
-- Rewards will be given for smaller bugs or ideas.
+Navigate to project root and start up local node:
+```shell script
+npx hardhat node
+```
+
+Create `env.local` file in the root directory and add values for keys:
+```
+PRIVATE_KEY=<some private key from account on local node>
+RPC_ENDPOINT=<can leave blank or provide endpoint like INFURA>
+```
+Open up `addresses/137.json` and ensure values for `weth` and `auctionHouse` are empty, i.e. `""`. Then run the deploy script targeting your local hardhat node:
+```
+npx ts-node scripts/deploy.ts --chainId=137
+```
+NOTE: I think chain ID 137 actually correspond to Polygon (Matic) Network, but the way the deploy script is written, any chainId over other than 1 or 4 will be treated as local and pull addresses from the corresponding `/addresses/<chainId>.json` file.
 
 
-## Acknowledgements
 
-This project is the result of an incredible community of builders, projects and contributors.
-
-We would like to acknowledge the [Mint Fund](https://mint.af) and the [$BOUNTY backers](https://mint.mirror.xyz/6tD-QHgfCWvfKTjZgMoDd-8Gwdx3oibYuaGvg715Xco) for crowdfunding and coordinating the development of an opensource version of reserve auctions, implemented by [Billy Rennekamp](https://twitter.com/billyrennekamp).
-
-We would also like to credit projects that have pioneered and improved on the reserve auction mechanism and experience, such as SuperRare. Lastly, we'd like to ackowledge [Coldie](https://twitter.com/Coldie), the original pioneer of the reserve timed auction mechanism.
