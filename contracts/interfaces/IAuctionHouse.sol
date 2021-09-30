@@ -10,7 +10,7 @@ interface IAuctionHouse {
         // ID for the ERC721 token
         uint256 tokenId;
         // Address for the ERC721 contract
-        address tokenContract;        
+        address tokenContract;                
         // The current highest bid amount
         uint256 amount;
         // The length of time to run the auction for, after the first bid was made
@@ -35,7 +35,6 @@ interface IAuctionHouse {
         //The percentage of the sale the commission address receives
         //If percentage is set to 0, the full amount will be sent
         uint256 royaltyPercentage;
-
     }
 
     event AuctionCreated(
@@ -47,13 +46,7 @@ interface IAuctionHouse {
         address tokenOwner,        
         address auctionCurrency
     );
-
-    event AuctionApprovalUpdated(
-        uint256 indexed auctionId,
-        uint256 indexed tokenId,
-        address indexed tokenContract        
-    );
-
+    
     event AuctionReservePriceUpdated(
         uint256 indexed auctionId,
         uint256 indexed tokenId,
@@ -123,11 +116,31 @@ interface IAuctionHouse {
 
     function setAuctionReservePrice(uint256 auctionId, uint256 reservePrice) external;
 
-    function setRoyalty(address tokenContract, address payable beneficiaryAddress, uint256 royaltyPercentage) external;
+    function setRoyalty(
+        address tokenContract, 
+        address payable beneficiaryAddress, 
+        uint256 royaltyPercentage
+    ) external;
 
     function createBid(uint256 auctionId, uint256 amount) external payable;
 
     function endAuction(uint256 auctionId) external;
 
     function cancelAuction(uint256 auctionId) external;
+
+    function setPublicAuctionsEnabled(bool status) external;
+
+    function whitelistAccount(address sellerOrTokenContract) external;
+
+    function removeWhitelistedAccount(address sellerOrTokenContract) external;
+
+    function isWhitelisted(address sellerOrTekenContract) external view returns(bool);
+        
+    function addAuctioneer(address who) external;
+
+    function removeAuctioneer(address who) external;
+
+    function isAuctioneer(address who) external view returns(bool);
+
+
 }

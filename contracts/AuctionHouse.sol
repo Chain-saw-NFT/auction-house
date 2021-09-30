@@ -7,7 +7,7 @@
 // https://github.com/ourzora/auction-house/blob/d87346f9286130af529869b8402733b1fabe885b/contracts/AuctionHouse.sol
 //
 // AuctionHouse.sol source code Copyright Zora licensed under the GPL-3.0 license.
-// Modified with love by Chain/Saw.
+// Modified with love by Chain/Saw <3.
 
 pragma solidity ^0.8.7;
 
@@ -87,16 +87,19 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl, Ownable 
         _;
     }
     
-    /*
-     * Constructor
+    /**
+     * @notice constructor 
      */
     constructor(address _weth, address[] memory auctioneers) {
         wethAddress = _weth;
         timeBuffer = 15 * 60; // extend 15 minutes after every bid made in last 15 minutes
         minBidIncrementPercentage = 5; // 5%
         publicAuctionsEnabled = false;
-        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);        
-        _addAuctioneers(auctioneers);        
+        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
+
+        for (uint i = 0; i < auctioneers.length; i++) {
+            _addAuctioneer(auctioneers[i]);
+        } 
     }
 
     /**
@@ -109,7 +112,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl, Ownable 
         uint256 duration,
         uint256 reservePrice,                
         address auctionCurrency
-    ) public  override nonReentrant returns (uint256) {        
+    ) public override nonReentrant returns (uint256) {        
         require(
             IERC165(tokenContract).supportsInterface(interfaceId),
             "tokenContract does not support ERC721 interface"
@@ -354,17 +357,39 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl, Ownable 
     }
 
     /**
+     * @notice enable or disable auctions to be created on the basis of whitelist
+     */
+    function setPublicAuctionsEnabled(bool status) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        publicAuctionsEnabled = status;
+    }
+
+    /**
       * @notice add account representing token owner (seller) or token contract to the whitelist
      */
-    function whitelistAccount(address sellerOrTokenContract) external onlyAuctioneer {
+    function whitelistAccount(address sellerOrTokenContract) external override onlyAuctioneer {
         _whitelistAccount(sellerOrTokenContract);
     }
 
-    function setPublicAuctionsEnabled(bool status) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        publicAuctionsEnabled = status;
+    function removeWhitelistedAccount(address sellerOrTokenContract) external override onlyAuctioneer {
+        delete whitelistedAccounts[sellerOrTokenContract];
+    }
+
+    function isWhitelisted(address sellerOrTekenContract) external view override returns(bool){
+        return _isWhitelisted(sellerOrTekenContract);
     }
     
-    // # auction helpers #
+    function addAuctioneer(address who) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        _addAuctioneer(who);
+    }
+
+    function removeAuctioneer(address who) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        revokeRole(AUCTIONEER, who);
+    }
+
+    function isAuctioneer(address who) external view override returns(bool) {
+        return hasRole(AUCTIONEER, who);
+    }
+    
     /**
      * @dev Given an amount and a currency, transfer the currency to this contract.
      * If the currency is ETH (0x0), attempt to wrap the amount as WETH
@@ -428,50 +453,24 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl, Ownable 
         }
 
         if (publicAuctionsEnabled) {
-            return _isWhitelisted(seller, tokenContract);
+            return _isWhitelisted(seller) || _isWhitelisted(tokenContract);
         }
 
         return false;
-    }
-
-    function addAuctioneer(address who) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _addAuctioneer(who);
-    }
-    
-    // # Helpers for managing auctioneers #
-    function _addAuctioneers(address[] memory auctioneers) internal {
-        for (uint i = 0; i < auctioneers.length && i < 10; i++) {
-            _addAuctioneer(auctioneers[i]);
-        }
     }
 
     function _addAuctioneer(address who) internal {        
         _setupRole(AUCTIONEER, who);
     }
 
-    function _removeAuctioneer(address who) internal {
-        revokeRole(AUCTIONEER, who);
-    }
-
-    // # Helpers for managing whitelist #
-    function _isWhitelisted(address seller, address tokenContract) internal view returns(bool) {
-        return whitelistedAccounts[seller] || whitelistedAccounts[tokenContract];
-    }
-
-    function _whitelistAccounts(address[] memory auctioneers) internal {
-        for (uint i = 0; i < auctioneers.length; i++) {
-            _whitelistAccount(auctioneers[i]);
-        }
+    function _isWhitelisted(address sellerOrTokenContract) internal view returns(bool) {
+        return whitelistedAccounts[sellerOrTokenContract];
     }
 
     function _whitelistAccount(address sellerOrTokenContract) internal {        
         whitelistedAccounts[sellerOrTokenContract] = true;
     }
-
-    function _removeWhitelistedAccount(address sellerOrTokenContract) internal {
-        delete whitelistedAccounts[sellerOrTokenContract];
-    }
-
+    
     receive() external payable {}
     fallback() external payable {}
 }
