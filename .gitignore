@@ -13,6 +13,7 @@ coverage.json
 .env.dev
 .env.prod
 .env.*
+data
 
 .vscode
 

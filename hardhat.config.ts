@@ -25,7 +25,7 @@ export default {
     ],
   },
   abiExporter: {
-    path: './artifacts/data/abi',
+    path: './data/abi',
     clear: true,
     flat: true,
     spacing: 2,
