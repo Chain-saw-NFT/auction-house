@@ -5,6 +5,7 @@ import "hardhat-typechain";
 import "solidity-coverage";
 import "@nomiclabs/hardhat-etherscan";
 import "hardhat-gas-reporter"
+import 'hardhat-abi-exporter';
 
 
   
@@ -23,7 +24,13 @@ export default {
       }
     ],
   },
-  
+  abiExporter: {
+    path: './artifacts/data/abi',
+    clear: true,
+    flat: true,
+    spacing: 2,
+    pretty: true,
+  },
   gasReporter: {
     currency: 'USD',
     gasPrice: 100,
