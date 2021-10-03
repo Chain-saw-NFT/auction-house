@@ -527,6 +527,7 @@ describe("AuctionHouse", () => {
             null,
             null,
             null,
+            null,
             null
           ),
           block
@@ -628,6 +629,7 @@ describe("AuctionHouse", () => {
             null,
             null,
             null,
+            null,
             null
           ),
           block
@@ -670,6 +672,7 @@ describe("AuctionHouse", () => {
           });
           const events = await auctionHouse.queryFilter(
             auctionHouse.filters.AuctionBid(
+              null,
               null,
               null,
               null,
@@ -899,6 +902,7 @@ describe("AuctionHouse", () => {
         await auctionHouse.endAuction(0);
         const events = await auctionHouse.queryFilter(
           auctionHouse.filters.AuctionEnded(
+            null,
             null,
             null,
             null,
