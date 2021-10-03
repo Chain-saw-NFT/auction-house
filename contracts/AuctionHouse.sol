@@ -276,6 +276,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl, Ownable 
             auctions[auctionId].tokenContract,
             msg.sender,
             amount,
+            block.timestamp,
             lastBidder == address(0), // firstBid boolean
             extended
         );
@@ -340,6 +341,7 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl, Ownable 
                 amountRemaining,
                 royaltyRegistry[tokenContract].beneficiary,
                 royaltyAmount,            
+                block.timestamp,
                 currency
             );
 
@@ -352,8 +354,9 @@ contract AuctionHouse is IAuctionHouse, ReentrancyGuard, AccessControl, Ownable 
                 auctions[auctionId].tokenId,
                 auctions[auctionId].tokenContract,
                 auctions[auctionId].tokenOwner,            
-                auctions[auctionId].bidder,
-                tokenOwnerProfit,            
+                auctions[auctionId].bidder,                
+                tokenOwnerProfit,  
+                block.timestamp,                                          
                 currency
             );
         }

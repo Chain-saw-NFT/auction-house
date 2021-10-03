@@ -66,6 +66,7 @@ interface IAuctionHouse {
         address indexed tokenContract,
         address sender,
         uint256 value,
+        uint256 bidTime,
         bool firstBid,
         bool extended
     );
@@ -82,8 +83,9 @@ interface IAuctionHouse {
         uint256 indexed tokenId,
         address indexed tokenContract,
         address tokenOwner,        
-        address winner,
-        uint256 amount,        
+        address winner,        
+        uint256 amount,                
+        uint256 endTime,
         address auctionCurrency
     );
 
@@ -95,7 +97,8 @@ interface IAuctionHouse {
         address winner,
         uint256 amount,
         address beneficiaryAddress,
-        uint256 royaltyAmount,        
+        uint256 royaltyAmount,  
+        uint256 endTime,      
         address auctionCurrency
     );
 
