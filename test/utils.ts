@@ -43,7 +43,7 @@ export const deployBidder = async (auction: string, nftContract: string) => {
 };
 
 export const revert = (messages: TemplateStringsArray) =>
-  `VM Exception while processing transaction: revert ${messages[0]}`;
+  `VM Exception while processing transaction: reverted with reason string '${messages[0]}'`;
 
   /*
 export const mint = async (media: Media) => {

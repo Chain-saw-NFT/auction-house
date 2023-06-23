@@ -18,6 +18,8 @@
     "prepublishOnly": "yarn build:contracts && yarn build:package",
     "build:contracts": "hardhat compile",
     "build:package": "rm -rf ./dist && tsc && cp typechain/*.d.ts dist/typechain && cp -R addresses dist && cp -R artifacts/contracts dist/artifacts && cp -R contracts dist",
+    "createAuction": "ts-node scripts/createAuction.ts",
+    "endAuction": "ts-node scripts/endAuction.ts",
     "test": "hardhat test",
     "deploy": "ts-node scripts/deploy.ts"
   },
@@ -33,7 +35,7 @@
     "chai": "^4.3.4",
     "chai-as-promised": "^7.1.1",
     "ethereum-waffle": "^3.3.0",
-    "ethers": "^5.0.32",
+    "ethers": "5.0.32",
     "hardhat": "^2.1.1",
     "hardhat-abi-exporter": "^2.3.0",
     "hardhat-gas-reporter": "^1.0.4",
@@ -42,7 +44,7 @@
     "ts-generator": "^0.1.1",
     "ts-node": "^9.1.1",
     "typechain": "^4.0.3",
-    "typescript": "^4.2.3"
+    "typescript": "4.2.3"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^4.1.0",

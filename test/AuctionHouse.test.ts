@@ -21,7 +21,7 @@ const ADMIN_ROLE = "0x0000000000000000000000000000000000000000000000000000000000
 const wethAddr = "0x0000000000000000000000000000000000000000";
 
 describe("AuctionHouse", () => {  
-  let weth: Contract;
+  let weth: WETH;
   let badERC721: BadERC721;
   let testERC721: TestERC721;  
 
